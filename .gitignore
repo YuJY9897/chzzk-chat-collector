@@ -1,0 +1,6 @@
+node_modules/
+.env
+data/
+.tokens.latest.json
+tokens.json
+npm-debug.log*
