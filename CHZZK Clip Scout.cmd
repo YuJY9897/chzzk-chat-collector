@@ -22,42 +22,12 @@ if not exist "node_modules" (
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$c=Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { exit 0 } else { exit 1 }"
 if not errorlevel 1 (
-  echo.
-  echo CHZZK Clip Scout is already using port 3000.
-  echo Another app window may already be running, or an old process may be stuck.
-  echo.
-  echo 1. Open existing app
-  echo 2. Stop old process and restart
-  echo 3. Cancel
-  echo.
-  choice /c 123 /n /m "Choose 1, 2, or 3: "
-  if errorlevel 3 exit /b 0
-  if errorlevel 2 goto restart_existing
-  if errorlevel 1 (
-    start "" "http://localhost:3000"
-    exit /b 0
-  )
+  echo CHZZK Clip Scout is already running. Opening the app page...
+  start "" "http://localhost:3000"
+  exit /b 0
 )
 
-start "" "http://localhost:3000"
-node src/server.js
-
-echo.
-echo App stopped.
-pause
-exit /b 0
-
-:restart_existing
-echo.
-echo Stopping existing process on port 3000...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$conns=Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue; foreach ($c in $conns) { if ($c.OwningProcess -and $c.OwningProcess -ne 0) { Stop-Process -Id $c.OwningProcess -Force -ErrorAction SilentlyContinue } }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process node -ArgumentList 'src/server.js' -WindowStyle Hidden"
 timeout /t 1 >nul
-goto start_app
-
-:start_app
 start "" "http://localhost:3000"
-node src/server.js
-
-echo.
-echo App stopped.
-pause
+exit /b 0

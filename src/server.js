@@ -1,20 +1,29 @@
+import { exec } from 'node:child_process';
+import fs from 'node:fs';
 import http from 'node:http';
+import path from 'node:path';
 import { URL } from 'node:url';
-import { requiredEnv, optionalEnv } from './config.js';
+import { optionalEnv } from './config.js';
 import { createAuthUrl, exchangeCode } from './oauth.js';
 import { clearTokens, hasTokens, readTokens, writeTokens } from './token-store.js';
 import { ChatCollector } from './chat-collector.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
+const defaultOutputDir = path.resolve('./data');
 let expectedState = null;
 let collector = null;
-let status = '대기 중';
+let status = '대기 중입니다.';
 let lastFiles = null;
-let standby = null;
-let activeMode = 'idle';
+let completion = null; // { finishedAt, reason, csvPath, jsonlPath }
 let lastReceivedAt = null;
 const recentChats = [];
+
+const REASON_TEXT = {
+  user: '사용자 종료',
+  broadcast_end: '방송 종료 감지',
+  connection_lost: '연결 끊김(5분 초과)'
+};
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -23,10 +32,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/') return sendHtml(res, renderHome());
     if (req.method === 'GET' && url.pathname === '/auth/start') return startAuth(res);
     if (req.method === 'GET' && url.pathname === '/callback') return handleCallback(url, res);
-    if (req.method === 'POST' && url.pathname === '/api/collect/stop') return stopCollect(res);
-    if (req.method === 'POST' && url.pathname === '/api/standby/start') return startStandby(req, res);
-    if (req.method === 'POST' && url.pathname === '/api/standby/stop') return stopStandby(res);
+    if (req.method === 'POST' && url.pathname === '/api/collect/on') return collectOn(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/collect/pause') return collectPause(res);
+    if (req.method === 'POST' && url.pathname === '/api/collect/resume') return collectResume(res);
+    if (req.method === 'POST' && url.pathname === '/api/collect/off') return collectOff(res);
+    if (req.method === 'POST' && url.pathname === '/api/open-folder') return openFolder(res);
     if (req.method === 'POST' && url.pathname === '/api/logout') return logout(res);
+    if (req.method === 'POST' && url.pathname === '/api/app/quit') return quitApp(res);
     if (req.method === 'GET' && url.pathname === '/api/status') return sendJson(res, getStatus());
 
     sendText(res, 'Not found', 404);
@@ -37,16 +49,15 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(port, () => {
-  console.log('');
-  console.log('============================================================');
-  console.log(' CHZZK Clip Scout 실행 중');
-  console.log(' 채팅 로그를 수집하는 동안 이 CMD 창을 닫지 마세요.');
-  console.log(' 이 창을 닫으면 수집도 중지됩니다.');
-  console.log('============================================================');
-  console.log('');
+  console.log('CHZZK Clip Scout 백그라운드 실행 중');
   console.log(`Open http://localhost:${port}`);
-  console.log(`Redirect URI: ${redirectUri}`);
+  console.log('종료는 웹 화면의 "앱 종료" 버튼을 사용하세요.');
 });
+
+function getMode() {
+  if (!collector?.running) return 'idle';
+  return collector.paused ? 'paused' : 'on';
+}
 
 function startAuth(res) {
   const auth = createAuthUrl(redirectUri);
@@ -58,90 +69,41 @@ async function handleCallback(url, res) {
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
 
-  if (!code || !state) return sendHtml(res, renderMessage('연결 실패', 'code 또는 state가 없습니다.'));
-  if (state !== expectedState) return sendHtml(res, renderMessage('연결 실패', 'state 값이 일치하지 않습니다. 다시 연결해 주세요.'));
+  if (!code || !state) return sendHtml(res, renderMessage('연결 실패', 'code 또는 state가 없습니다.', '/'));
+  if (state !== expectedState) return sendHtml(res, renderMessage('연결 실패', 'state 값이 일치하지 않습니다. 다시 연결해 주세요.', '/'));
 
   const tokens = await exchangeCode({ code, state });
   writeTokens(tokens);
   expectedState = null;
   status = '치지직 계정 연결 완료';
-  sendHtml(res, renderMessage('연결 완료', '토큰은 화면에 표시하지 않고 로컬 tokens.json에 저장했습니다.', '/'));
+  sendHtml(res, renderMessage('연결 완료', '계정이 연결되었습니다. 이제 로그 수집을 시작할 수 있습니다.', '/'));
 }
 
-async function startStandby(req, res) {
-  if (!hasTokens()) return sendJson(res, { ok: false, error: '먼저 치지직 계정을 연결해 주세요.' }, 400);
-  const body = await readBody(req);
-  const params = new URLSearchParams(body);
-  standby = {
-    enabled: true,
-    broadcastTitle: params.get('logFileName') || 'broadcast',
-    broadcastStartedAt: toIsoWithTimezone(params.get('logStartDateTime') || ''),
-    retryMs: 30000,
-    timer: null,
-    lastError: ''
-  };
-  activeMode = 'standby';
-  status = '자동 저장 예약 중입니다. 방송 중이면 지금부터 저장하고, 아니면 방송이 켜질 때까지 기다립니다.';
-  await tryStandbyStart();
-  sendRedirect(res, '/');
-}
+async function collectOn(req, res) {
+  if (!hasTokens()) return sendHtml(res, renderMessage('시작 실패', '먼저 치지직 계정을 연결해 주세요.', '/'));
+  if (getMode() !== 'idle') return sendRedirect(res, '/');
 
-function stopStandby(res) {
-  stopStandbyTimer();
-  standby = null;
-  activeMode = 'idle';
-  status = '자동 저장 예약을 취소했습니다.';
-  sendRedirect(res, '/');
-}
+  const params = new URLSearchParams(await readBody(req));
+  const broadcastTitle = params.get('logFileName') || 'broadcast';
+  const broadcastStartedAt = toIsoWithTimezone(params.get('logStartDateTime') || '');
+  const outputDir = (params.get('outputDir') || defaultOutputDir).trim() || defaultOutputDir;
 
-function stopCollect(res) {
-  stopStandbyTimer();
-  if (standby) standby.enabled = false;
-  if (collector) {
-    lastFiles = collector.stop();
+  try {
+    fs.mkdirSync(outputDir, { recursive: true });
+  } catch (error) {
+    return sendHtml(res, renderMessage('시작 실패', `저장 경로를 만들 수 없습니다: ${error.message}`, '/'));
   }
-  activeMode = 'idle';
-  sendRedirect(res, '/');
-}
 
-function logout(res) {
-  stopStandbyTimer();
-  standby = null;
-  if (collector?.running) collector.stop();
-  clearTokens();
-  activeMode = 'idle';
-  status = '연결 해제 완료';
-  sendRedirect(res, '/');
-}
-
-function getStatus() {
-  return {
-    connected: hasTokens(),
-    collecting: Boolean(collector?.running),
-    waiting: Boolean(standby?.enabled),
-    activeMode,
-    status,
-    lastFiles,
-    recentChats,
-    lastReceivedAt: lastReceivedAt ? lastReceivedAt.toISOString() : null
-  };
-}
-
-async function createAndStartCollector({ broadcastTitle, broadcastStartedAt, restartFromStandby }) {
   lastReceivedAt = null;
   recentChats.length = 0;
+  completion = null;
+
   collector = new ChatCollector({
     tokens: readTokens(),
     onTokens: writeTokens,
     onStatus: (message) => { status = message; },
-    onEnd: () => {
-      if (standby?.enabled) {
-        activeMode = 'standby';
-        status = '방송 종료 또는 연결 종료를 감지했습니다. 다시 자동 저장 예약 상태로 돌아갑니다.';
-        scheduleStandbyRetry();
-      } else {
-        activeMode = 'idle';
-      }
+    onEnd: (reason) => {
+      if (reason !== 'user') finishCollection(reason);
     },
     onChat: (chat) => {
       lastReceivedAt = new Date();
@@ -150,45 +112,89 @@ async function createAndStartCollector({ broadcastTitle, broadcastStartedAt, res
     }
   });
 
-  const files = await collector.start({ broadcastTitle, broadcastStartedAt });
-  if (restartFromStandby) {
-    activeMode = 'collecting';
-    status = '방송 감지. 채팅 저장을 시작했습니다.';
-  }
-  return files;
-}
-
-async function tryStandbyStart() {
-  if (!standby?.enabled || collector?.running) return;
   try {
-    lastFiles = await createAndStartCollector({
-      broadcastTitle: standby.broadcastTitle,
-      broadcastStartedAt: standby.broadcastStartedAt,
-      restartFromStandby: true
-    });
+    lastFiles = await collector.start({ broadcastTitle, broadcastStartedAt, outputDir });
   } catch (error) {
-    standby.lastError = error.message;
-    status = `아직 채팅 저장을 시작하지 못했습니다. 30초 후 다시 시도합니다. (${error.message})`;
-    scheduleStandbyRetry();
+    collector = null;
+    return sendHtml(res, renderMessage('시작 실패', error.message, '/'));
   }
+
+  sendRedirect(res, '/');
 }
 
-function scheduleStandbyRetry() {
-  if (!standby?.enabled) return;
-  stopStandbyTimer();
-  standby.timer = setTimeout(() => {
-    tryStandbyStart().catch((error) => {
-      status = `자동 저장 예약 재시도 오류: ${error.message}`;
-      scheduleStandbyRetry();
-    });
-  }, standby.retryMs);
+function collectPause(res) {
+  collector?.pause();
+  sendRedirect(res, '/');
 }
 
-function stopStandbyTimer() {
-  if (standby?.timer) {
-    clearTimeout(standby.timer);
-    standby.timer = null;
+async function collectResume(res) {
+  try {
+    await collector?.resume();
+  } catch (error) {
+    status = `재개 실패: ${error.message}`;
   }
+  sendRedirect(res, '/');
+}
+
+function collectOff(res) {
+  if (collector?.running) {
+    lastFiles = collector.stop();
+    finishCollection('user');
+  }
+  sendRedirect(res, '/');
+}
+
+function finishCollection(reason) {
+  if (completion) return;
+  const files = collector?.files || lastFiles;
+  completion = {
+    finishedAt: new Date().toISOString(),
+    reason,
+    csvPath: files ? path.resolve(files.csvPath) : '',
+    jsonlPath: files ? path.resolve(files.jsonlPath) : ''
+  };
+  lastFiles = files;
+  status = `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}).`;
+}
+
+function openFolder(res) {
+  // 보안: 클라이언트가 보낸 경로가 아니라 서버가 기억하는 저장 파일 위치만 연다
+  const target = completion?.csvPath || (lastFiles ? path.resolve(lastFiles.csvPath) : defaultOutputDir);
+  const arg = fs.existsSync(target) ? `/select,"${target}"` : `"${defaultOutputDir}"`;
+  exec(`explorer.exe ${arg}`);
+  sendJson(res, { ok: true });
+}
+
+function logout(res) {
+  if (getMode() !== 'idle') {
+    status = '수집 중에는 연결을 끊을 수 없습니다. 먼저 종료해 주세요.';
+    return sendRedirect(res, '/');
+  }
+  clearTokens();
+  status = '연결 해제 완료';
+  sendRedirect(res, '/');
+}
+
+function quitApp(res) {
+  if (collector?.running) {
+    lastFiles = collector.stop();
+    finishCollection('user');
+  }
+  sendHtml(res, renderMessage('앱 종료', 'CHZZK Clip Scout를 종료했습니다. 이 창을 닫아주세요.'));
+  setTimeout(() => process.exit(0), 300);
+}
+
+function getStatus() {
+  return {
+    connected: hasTokens(),
+    mode: getMode(),
+    subscribed: Boolean(collector?.subscribed),
+    status,
+    lastFiles,
+    recentChats,
+    lastReceivedAt: lastReceivedAt ? lastReceivedAt.toISOString() : null,
+    completion
+  };
 }
 
 function toIsoWithTimezone(localDateTime) {
@@ -196,50 +202,92 @@ function toIsoWithTimezone(localDateTime) {
   return `${localDateTime}:00+09:00`;
 }
 
+function fmtTime(iso) {
+  try {
+    return new Date(iso).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+  } catch {
+    return iso;
+  }
+}
+
 function renderHome() {
   const current = getStatus();
-  const connectedText = current.connected ? '연결됨' : '연결 안 됨';
-  const collectingText = current.collecting ? '저장 중' : '저장 안 함';
-  const waitingText = current.waiting ? '예약됨' : '예약 안 함';
+  const mode = current.mode;
   const defaultFileName = formatDateForFilename(new Date());
-  const chats = current.recentChats.map((chat) => `<li><time>${escapeHtml(chat.time)}</time> <b>${escapeHtml(chat.nickname)}</b> ${escapeHtml(chat.content)}</li>`).join('');
-  const files = current.lastFiles ? `<p class="muted">저장 위치<br>CSV: ${escapeHtml(current.lastFiles.csvPath)}<br>JSONL: ${escapeHtml(current.lastFiles.jsonlPath)}</p>` : '<p class="muted">저장 파일은 이 앱 폴더의 data 폴더에 만들어집니다.</p>';
-  const lastReceivedText = current.collecting
-    ? (current.lastReceivedAt
-      ? `<p class="muted">마지막 채팅 수신: ${formatElapsed(current.lastReceivedAt)} (새로고침을 눌러 다시 확인하세요)</p>`
-      : '<p class="muted">아직 채팅을 받지 못했습니다. 방송에 채팅이 올라오는지 확인해 주세요.</p>')
-    : '';
-  const isBusy = current.collecting || current.waiting;
-  const disabled = isBusy ? 'disabled' : '';
-  const busyNote = isBusy ? '<p class="muted">채팅 저장 또는 자동 저장 예약 중에는 설정을 바꿀 수 없습니다. 변경하려면 먼저 멈추거나 예약을 취소하세요.</p>' : '';
-  const connectedSections = current.connected ? `
-    <section>
-      <h2>2. 자동 저장 예약</h2>
-      <p class="warning">과거 채팅은 저장할 수 없습니다. 방송 시작 전에 꼭 채팅 저장을 시작하세요.</p>
-      ${busyNote}
-      <p class="muted">방송 전이라면 방송이 켜질 때까지 기다리고, 이미 방송 중이라면 버튼을 누른 시점부터 바로 저장합니다.</p>
-      <form method="post" action="/api/standby/start">
+
+  const modeBadge = {
+    idle: '<span class="badge"><span class="dot gray"></span>꺼짐</span>',
+    on: '<span class="badge live"><span class="dot pulse"></span>수집 중</span>',
+    paused: '<span class="badge paused"><span class="dot yellow"></span>일시정지</span>'
+  }[mode];
+
+  const accountBadge = current.connected
+    ? '<span class="badge ok"><span class="dot green"></span>계정 연결됨</span>'
+    : '<span class="badge"><span class="dot gray"></span>계정 연결 안 됨</span>';
+
+  const connectSection = current.connected
+    ? `<div class="row">
+        <button class="ghost" disabled>✓ 치지직 계정이 연결되어 있습니다</button>
+        <form method="post" action="/api/logout"><button class="ghost small" type="submit" ${mode === 'idle' ? '' : 'disabled'}>연결 끊기</button></form>
+      </div>
+      <p class="muted">한 번 연결하면 앱을 다시 켜도 유지됩니다.</p>`
+    : `<div class="row">
+        <a class="button primary" href="/auth/start">치지직 계정 연결하기</a>
+      </div>
+      <p class="muted">치지직 로그인 화면으로 이동해 권한에 동의하면 자동으로 돌아옵니다. 처음 한 번만 하면 됩니다.</p>`;
+
+  let controls = '';
+  if (mode === 'idle') {
+    controls = `
+      <form method="post" action="/api/collect/on">
         <label>저장할 파일 이름</label>
-        <input name="logFileName" value="${defaultFileName}" placeholder="예: ${defaultFileName}" ${disabled}>
-        <label>언제부터 채팅을 저장할까요?</label>
-        <input name="logStartDateTime" type="datetime-local" ${disabled}>
-        <p class="muted">비워두면 실제 채팅 시각만 저장됩니다. 값을 넣으면 다시보기 기준 시간, 예: 00:15:30 계산에 사용됩니다.</p>
-        <div class="row">
-          <button type="submit" ${disabled}>자동 저장 예약하기</button>
+        <input name="logFileName" value="${defaultFileName}">
+        <label>저장 위치</label>
+        <input name="outputDir" value="${escapeHtml(defaultOutputDir)}">
+        <details>
+          <summary>고급 설정</summary>
+          <label>다시보기 기준 시작 시간 (선택)</label>
+          <input name="logStartDateTime" type="datetime-local">
+          <p class="muted">방송 시작 시각을 넣으면 각 채팅이 방송 몇 분 몇 초에 나왔는지(예: 00:15:30)도 함께 저장됩니다. 비워둬도 됩니다.</p>
+        </details>
+        <div class="row" style="margin-top: 16px;">
+          <button class="primary big" type="submit" ${current.connected ? '' : 'disabled'}>로그 수집 ON</button>
         </div>
       </form>
-      <form method="post" action="/api/collect/stop" style="margin-top: 12px;"><button class="secondary" type="submit">채팅 저장 멈추기</button></form>
-      <form method="post" action="/api/standby/stop" style="margin-top: 12px;"><button class="secondary" type="submit">예약 취소하기</button></form>
-      ${files}
-      ${lastReceivedText}
-    </section>
-    <section>
-      <h2>최근 채팅</h2>
-      <ul>${chats || '<li class="muted">아직 수집된 채팅이 없습니다.</li>'}</ul>
-    </section>` : `
-    <section>
-      <p class="muted">채팅 저장을 시작하려면 먼저 치지직 계정을 연결해 주세요.</p>
-    </section>`;
+      <p class="muted">방송 전에 켜두면 방송이 시작될 때 자동으로 수집을 시작합니다. 이미 방송 중이면 바로 시작합니다.</p>`;
+  } else {
+    const pauseOrResume = mode === 'paused'
+      ? '<form method="post" action="/api/collect/resume"><button class="primary" type="submit">▶ 재개</button></form>'
+      : '<form method="post" action="/api/collect/pause"><button class="ghost" type="submit">❚❚ 일시정지</button></form>';
+    controls = `
+      <div class="row">
+        ${pauseOrResume}
+        <form method="post" action="/api/collect/off"><button class="danger" type="submit">■ 종료</button></form>
+      </div>
+      <p class="muted">일시정지 후 재개하면 같은 파일에 이어서 저장됩니다. 종료하면 파일이 완성됩니다.</p>
+      ${current.lastFiles ? `<div class="filebox"><div class="filebox-title">저장 중인 파일</div><code>${escapeHtml(path.resolve(current.lastFiles.csvPath))}</code></div>` : ''}
+      <p class="muted" id="last-received">${current.lastReceivedAt
+        ? `마지막 채팅 수신: ${fmtTime(current.lastReceivedAt)}`
+        : '아직 저장된 채팅이 없습니다. 방송 전이라면 방송이 켜질 때까지 자동으로 기다립니다.'}</p>`;
+  }
+
+  const resultCard = completion
+    ? `<section class="card">
+        <h2>마지막 수집 결과</h2>
+        <p class="muted">${escapeHtml(REASON_TEXT[completion.reason] || completion.reason)} · ${fmtTime(completion.finishedAt)}</p>
+        <div class="filebox">
+          <div class="filebox-title">CSV</div><code>${escapeHtml(completion.csvPath)}</code>
+          <div class="filebox-title" style="margin-top:8px;">JSONL</div><code>${escapeHtml(completion.jsonlPath)}</code>
+        </div>
+        <div class="row" style="margin-top:12px;">
+          <button class="ghost" type="button" onclick="openFolder()">저장 폴더 열기</button>
+        </div>
+      </section>`
+    : '';
+
+  const chats = current.recentChats
+    .map((chat) => `<li><time>${fmtTime(chat.time)}</time><b>${escapeHtml(chat.nickname)}</b><span>${escapeHtml(chat.content)}</span></li>`)
+    .join('');
 
   return `<!doctype html>
 <html lang="ko">
@@ -248,52 +296,176 @@ function renderHome() {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>CHZZK Clip Scout</title>
   <style>
-    body { margin: 0; font-family: Arial, sans-serif; background: #101312; color: #f2f5f3; }
-    main { max-width: 920px; margin: 0 auto; padding: 40px 20px; }
-    h1 { font-size: 32px; margin: 0 0 8px; }
-    section { border-top: 1px solid #2b302e; padding: 24px 0; }
-    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-    .pill { padding: 8px 12px; border: 1px solid #37413d; border-radius: 6px; background: #171b19; }
-    a.button, button { border: 0; border-radius: 6px; background: #00d9a5; color: #07110e; padding: 12px 16px; font-weight: 700; text-decoration: none; cursor: pointer; }
-    button.secondary { background: #303633; color: #f2f5f3; }
-    input { width: min(460px, 100%); padding: 12px; border: 1px solid #37413d; border-radius: 6px; background: #171b19; color: #f2f5f3; }
-    label { display: block; margin: 12px 0 6px; color: #c8d0cc; }
-    .muted { color: #a5afaa; line-height: 1.5; }
-    .warning { color: #f6d36d; line-height: 1.5; font-weight: 700; }
-    input:disabled, button:disabled { opacity: .55; cursor: not-allowed; }
-    li { margin: 8px 0; color: #dde5e1; }
-    time { color: #8ad8c0; margin-right: 8px; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; background: #0b0f0e; color: #eef4f1; line-height: 1.55; }
+    main { max-width: 720px; margin: 0 auto; padding: 36px 20px 60px; }
+    header { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #00d9a5, #00b4d8); display: flex; align-items: center; justify-content: center; font-size: 19px; }
+    h1 { font-size: 22px; margin: 0; letter-spacing: -.3px; }
+    .subtitle { color: #93a29b; font-size: 13.5px; margin: 0 0 22px 48px; }
+    .card { background: #121715; border: 1px solid #232b28; border-radius: 14px; padding: 22px 24px; margin-bottom: 14px; }
+    h2 { font-size: 15px; margin: 0 0 14px; color: #c9d6d0; letter-spacing: -.2px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .badge { display: inline-flex; align-items: center; gap: 7px; padding: 7px 13px; border-radius: 999px; background: #1a211e; border: 1px solid #2a332f; font-size: 13px; color: #b7c4be; }
+    .badge.live { background: rgba(0,217,165,.1); border-color: rgba(0,217,165,.35); color: #57e6c3; }
+    .badge.paused { background: rgba(246,211,109,.08); border-color: rgba(246,211,109,.3); color: #f6d36d; }
+    .badge.ok { color: #8fd8bf; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; }
+    .dot.gray { background: #566159; }
+    .dot.green { background: #00d9a5; }
+    .dot.yellow { background: #f6d36d; }
+    .dot.pulse { background: #00d9a5; animation: pulse 1.6s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,217,165,.5); } 50% { box-shadow: 0 0 0 6px rgba(0,217,165,0); } }
+    #status-pill { margin-top: 12px; font-size: 13.5px; color: #93a29b; }
+    a.button, button { border: 0; border-radius: 9px; padding: 11px 18px; font-weight: 600; font-size: 14px; text-decoration: none; cursor: pointer; font-family: inherit; transition: filter .15s, background .15s; }
+    .primary { background: #00d9a5; color: #06231b; }
+    .primary:hover:not(:disabled) { filter: brightness(1.1); }
+    .primary.big { padding: 13px 26px; font-size: 15px; }
+    .ghost { background: #1d2522; color: #cfe0d8; border: 1px solid #2c3733; }
+    .ghost:hover:not(:disabled) { background: #232d29; }
+    .ghost.small { padding: 8px 14px; font-size: 13px; }
+    .danger { background: #3a1d1d; color: #ff9e9e; border: 1px solid #5c2b2b; }
+    .danger:hover { background: #4a2222; }
+    button:disabled { opacity: .5; cursor: default; }
+    input { width: 100%; padding: 12px 14px; border: 1px solid #2c3733; border-radius: 9px; background: #0e1311; color: #eef4f1; font-size: 14px; font-family: inherit; margin-bottom: 4px; }
+    input:focus { outline: none; border-color: #00d9a5; }
+    label { display: block; margin: 14px 0 7px; color: #a9b8b1; font-size: 13px; font-weight: 600; }
+    details { margin-top: 14px; border: 1px solid #232b28; border-radius: 9px; padding: 10px 14px; }
+    summary { cursor: pointer; color: #93a29b; font-size: 13px; font-weight: 600; }
+    .muted { color: #7d8c85; font-size: 13px; }
+    .warning { color: #f6d36d; font-size: 13px; font-weight: 600; }
+    .filebox { background: #0e1311; border: 1px solid #232b28; border-radius: 9px; padding: 12px 14px; margin-top: 12px; }
+    .filebox-title { font-size: 11.5px; font-weight: 700; color: #6f7f77; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 3px; }
+    .filebox code { font-size: 12.5px; color: #9fd9c5; word-break: break-all; }
+    ul { list-style: none; padding: 0; margin: 0; }
+    li { display: flex; gap: 10px; padding: 8px 2px; border-bottom: 1px solid #1a211e; font-size: 13.5px; align-items: baseline; }
+    li:last-child { border-bottom: 0; }
+    li time { color: #5f9c88; font-size: 12px; flex-shrink: 0; }
+    li b { color: #cfe0d8; flex-shrink: 0; }
+    li span { color: #a9b8b1; word-break: break-all; }
+    footer { text-align: center; margin-top: 28px; }
+    .overlay { position: fixed; inset: 0; background: rgba(5,8,7,.72); display: flex; align-items: center; justify-content: center; z-index: 10; }
+    .modal { background: #121715; border: 1px solid #2c3733; border-radius: 16px; padding: 28px; max-width: 480px; width: calc(100% - 40px); box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+    .modal h3 { margin: 0 0 8px; font-size: 17px; }
+    .hidden { display: none; }
   </style>
 </head>
 <body>
   <main>
-    <h1>CHZZK Clip Scout</h1>
-    <p class="muted">공식 API로 권한을 받은 방송 채팅을 저장하는 로컬 수집기입니다.</p>
-    <section>
+    <header>
+      <div class="logo">🎬</div>
+      <h1>CHZZK Clip Scout</h1>
+    </header>
+    <p class="subtitle">치지직 공식 API로 내 방송 채팅을 자동 저장합니다</p>
+
+    <section class="card">
       <div class="row">
-        <span class="pill">계정: ${connectedText}</span>
-        <span class="pill">채팅 저장: ${collectingText}</span>
-        <span class="pill">자동 저장: ${waitingText}</span>
-        <span class="pill">${escapeHtml(current.status)}</span>
+        ${modeBadge}
+        ${accountBadge}
       </div>
+      <div id="status-pill">${escapeHtml(current.status)}</div>
     </section>
-    <section>
+
+    <section class="card">
       <h2>1. 치지직 연결</h2>
-      <p class="muted">처음 한 번만 연결하면 됩니다. 위 상태가 "계정: 연결됨"이면 다시 누르지 않아도 됩니다.</p>
-      <div class="row">
-        <a class="button" href="/auth/start">치지직 계정 연결하기</a>
-        <form method="post" action="/api/logout"><button class="secondary" type="submit">계정 연결 끊기</button></form>
-      </div>
+      ${connectSection}
     </section>
-    ${connectedSections}
+
+    <section class="card">
+      <h2>2. 로그 수집</h2>
+      <p class="warning">지나간 채팅은 저장할 수 없어요. 방송 시작 전에 미리 켜두세요.</p>
+      ${controls}
+    </section>
+
+    ${resultCard}
+
+    <section class="card">
+      <h2>최근 채팅</h2>
+      <div class="row" style="margin-bottom: 10px;">
+        <button class="ghost small" type="button" onclick="location.reload()">↻ 새로고침</button>
+        <span class="muted">원할 때 눌러서 수집 상태를 확인하세요.</span>
+      </div>
+      <ul>${chats || '<li><span class="muted">아직 수집된 채팅이 없습니다.</span></li>'}</ul>
+    </section>
+
+    <footer>
+      <form method="post" action="/api/app/quit" onsubmit="return confirm('앱을 완전히 종료할까요? 수집 중이면 저장 후 종료됩니다.')">
+        <button class="ghost small" type="submit">앱 종료</button>
+      </form>
+      <p class="muted">앱은 백그라운드로 실행됩니다. 완전히 끄려면 위 버튼을 누르세요.</p>
+    </footer>
   </main>
+
+  <div class="overlay hidden" id="end-modal">
+    <div class="modal">
+      <h3>수집이 종료되었습니다</h3>
+      <p class="muted" id="modal-reason"></p>
+      <div class="filebox">
+        <div class="filebox-title">CSV</div><code id="modal-csv"></code>
+        <div class="filebox-title" style="margin-top:8px;">JSONL</div><code id="modal-jsonl"></code>
+      </div>
+      <div class="row" style="margin-top:16px;">
+        <button class="ghost" type="button" onclick="openFolder()">저장 폴더 열기</button>
+        <button class="primary" type="button" onclick="location.reload()">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var REASON_TEXT = { broadcast_end: '방송 종료가 감지되어 자동으로 저장을 마쳤습니다.', connection_lost: '연결이 5분 이상 끊겨 수집을 종료했습니다.', user: '사용자가 종료했습니다.' };
+    var renderedMode = ${JSON.stringify(mode)};
+    var lastCompletion = ${JSON.stringify(completion ? completion.finishedAt : '')};
+
+    function openFolder() {
+      fetch('/api/open-folder', { method: 'POST' });
+    }
+
+    function timeAgo(iso) {
+      var sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+      if (sec < 60) return sec + '초 전';
+      if (sec < 3600) return Math.floor(sec / 60) + '분 전';
+      return Math.floor(sec / 3600) + '시간 전';
+    }
+
+    function poll() {
+      fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
+        var pill = document.getElementById('status-pill');
+        if (pill) pill.textContent = s.status;
+
+        var lr = document.getElementById('last-received');
+        if (lr && s.lastReceivedAt) lr.textContent = '마지막 채팅 수신: ' + timeAgo(s.lastReceivedAt);
+
+        if (s.completion && s.completion.finishedAt !== lastCompletion) {
+          lastCompletion = s.completion.finishedAt;
+          if (s.completion.reason !== 'user') {
+            document.getElementById('modal-reason').textContent = REASON_TEXT[s.completion.reason] || s.completion.reason;
+            document.getElementById('modal-csv').textContent = s.completion.csvPath;
+            document.getElementById('modal-jsonl').textContent = s.completion.jsonlPath;
+            document.getElementById('end-modal').classList.remove('hidden');
+            return;
+          }
+          location.reload();
+          return;
+        }
+
+        var modalOpen = !document.getElementById('end-modal').classList.contains('hidden');
+        if (s.mode !== renderedMode && !modalOpen) location.reload();
+      }).catch(function () { /* 서버 종료 등은 무시 */ });
+    }
+    setInterval(poll, 8000);
+  </script>
 </body>
 </html>`;
 }
 
 function renderMessage(title, body, backHref = '') {
-  const back = backHref ? `<p><a href="${backHref}">돌아가기</a></p>` : '';
-  return `<!doctype html><html lang="ko"><meta charset="utf-8"><title>${escapeHtml(title)}</title><body><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p>${back}</body></html>`;
+  const back = backHref ? `<a class="button primary" href="${backHref}" style="display:inline-block;margin-top:16px;">돌아가기</a>` : '';
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)}</title><style>
+    body { margin:0; font-family:'Segoe UI','Malgun Gothic',sans-serif; background:#0b0f0e; color:#eef4f1; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .box { background:#121715; border:1px solid #232b28; border-radius:16px; padding:36px 40px; max-width:440px; text-align:center; }
+    h1 { font-size:19px; margin:0 0 10px; } p { color:#93a29b; font-size:14px; margin:0; }
+    a.button { border-radius:9px; padding:11px 20px; font-weight:600; font-size:14px; text-decoration:none; background:#00d9a5; color:#06231b; }
+  </style></head><body><div class="box"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(body)}</p>${back}</div></body></html>`;
 }
 
 function sendHtml(res, html, statusCode = 200) {
@@ -332,14 +504,6 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-function formatElapsed(isoString) {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
-  if (seconds < 60) return `${seconds}초 전`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}분 전`;
-  return `${Math.floor(minutes / 60)}시간 전`;
 }
 
 function formatDateForFilename(date) {
