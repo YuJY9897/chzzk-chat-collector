@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import { exec, execFile } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -37,6 +37,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/collect/resume') return collectResume(res);
     if (req.method === 'POST' && url.pathname === '/api/collect/off') return collectOff(res);
     if (req.method === 'POST' && url.pathname === '/api/open-folder') return openFolder(res);
+    if (req.method === 'POST' && url.pathname === '/api/pick-folder') return pickFolder(res);
+    if (req.method === 'POST' && url.pathname === '/api/open-path') return openPath(req, res);
     if (req.method === 'POST' && url.pathname === '/api/logout') return logout(res);
     if (req.method === 'POST' && url.pathname === '/api/app/quit') return quitApp(res);
     if (req.method === 'GET' && url.pathname === '/api/status') return sendJson(res, getStatus());
@@ -165,6 +167,41 @@ function openFolder(res) {
   sendJson(res, { ok: true });
 }
 
+function pickFolder(res) {
+  // Windows 기본 폴더 선택 창을 띄우고 선택 결과를 돌려준다
+  const psScript = [
+    '[Console]::OutputEncoding = [System.Text.Encoding]::UTF8',
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '$owner = New-Object System.Windows.Forms.Form',
+    '$owner.TopMost = $true',
+    '$dialog = New-Object System.Windows.Forms.FolderBrowserDialog',
+    `$dialog.Description = '채팅 로그를 저장할 폴더를 선택하세요'`,
+    `$dialog.SelectedPath = '${defaultOutputDir.replace(/'/g, "''")}'`,
+    'if ($dialog.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $dialog.SelectedPath }'
+  ].join('; ');
+  const encoded = Buffer.from(psScript, 'utf16le').toString('base64');
+
+  execFile('powershell.exe', ['-NoProfile', '-STA', '-EncodedCommand', encoded], { windowsHide: true }, (error, stdout) => {
+    const picked = (stdout || '').trim();
+    if (error || !picked) return sendJson(res, { canceled: true });
+    sendJson(res, { path: picked });
+  });
+}
+
+async function openPath(req, res) {
+  let dir = '';
+  try {
+    dir = JSON.parse(await readBody(req))?.dir || '';
+  } catch {
+    dir = '';
+  }
+  if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+    return sendJson(res, { ok: false, error: '폴더를 찾을 수 없습니다.' }, 400);
+  }
+  execFile('explorer.exe', [dir], () => {});
+  sendJson(res, { ok: true });
+}
+
 function logout(res) {
   if (getMode() !== 'idle') {
     status = '수집 중에는 연결을 끊을 수 없습니다. 먼저 종료해 주세요.';
@@ -243,7 +280,12 @@ function renderHome() {
         <label>저장할 파일 이름</label>
         <input name="logFileName" value="${defaultFileName}">
         <label>저장 위치</label>
-        <input name="outputDir" value="${escapeHtml(defaultOutputDir)}">
+        <div class="row" style="flex-wrap: nowrap;">
+          <input id="outputDir" name="outputDir" value="${escapeHtml(defaultOutputDir)}" readonly style="flex: 1; margin-bottom: 0;">
+          <button class="ghost" type="button" onclick="pickFolder(this)">폴더 선택</button>
+          <button class="ghost" type="button" onclick="openPickedPath()">열기</button>
+        </div>
+        <p class="muted" style="margin-top: 6px;">폴더 선택을 누르면 선택 창이 열립니다. 열기를 누르면 지정한 폴더를 탐색기로 보여줍니다.</p>
         <details>
           <summary>고급 설정</summary>
           <label>다시보기 기준 시작 시간 (선택)</label>
@@ -418,6 +460,24 @@ function renderHome() {
 
     function openFolder() {
       fetch('/api/open-folder', { method: 'POST' });
+    }
+
+    function pickFolder(btn) {
+      btn.disabled = true;
+      btn.textContent = '선택 창 열림...';
+      fetch('/api/pick-folder', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j.path) document.getElementById('outputDir').value = j.path; })
+        .catch(function () {})
+        .then(function () { btn.disabled = false; btn.textContent = '폴더 선택'; });
+    }
+
+    function openPickedPath() {
+      fetch('/api/open-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dir: document.getElementById('outputDir').value })
+      });
     }
 
     function timeAgo(iso) {
