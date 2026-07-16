@@ -1,10 +1,13 @@
 {
   "name": "chzzk-chat-collector",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Official CHZZK Open API live chat collector for clip candidate analysis.",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
+    "app": "electron .",
+    "dist": "electron-builder --win portable",
     "auth:url": "node src/auth-url.js",
     "auth:token": "node src/token.js",
     "auth:revoke": "node src/revoke.js",
@@ -19,5 +22,29 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.vclipscout.chzzk-clip-scout",
+    "productName": "CHZZK Clip Scout",
+    "asar": false,
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["portable"],
+      "icon": "electron/assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "CHZZK-Clip-Scout.exe"
+    },
+    "directories": {
+      "output": "dist"
+    }
   }
 }

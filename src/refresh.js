@@ -14,7 +14,7 @@ export async function refreshAccessToken(refreshToken = requiredEnv('CHZZK_REFRE
   });
 }
 
-if (import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {
+if (process.argv[1] && import.meta.url === `file://${process.argv[1].replace(/\\/g, '/')}`) {
   const token = await refreshAccessToken();
   console.log(JSON.stringify(token, null, 2));
 }

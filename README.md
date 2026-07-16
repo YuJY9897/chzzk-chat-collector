@@ -17,7 +17,28 @@ npm install
 
 5. `.env.example`을 `.env`로 복사하고 `CHZZK_CLIENT_ID`, `CHZZK_CLIENT_SECRET`, `CHZZK_REDIRECT_URI`를 채웁니다.
 
-## 쉬운 실행: 로컬 웹앱
+## 데스크톱 앱 (권장)
+
+Electron 기반 네이티브 앱입니다. 개발 모드 실행:
+
+```bash
+npm run app
+```
+
+exe 빌드 (dist/CHZZK-Clip-Scout.exe 생성):
+
+```bash
+npm run dist
+```
+
+빌드된 exe는 **`.env` 파일을 exe와 같은 폴더에 두고** 실행합니다. 토큰(`tokens.json`), 설정(`settings.json`), 기본 저장 폴더(`data/`)도 exe 옆에 만들어집니다.
+
+- 창을 닫으면 "백그라운드로 유지 / 완전히 종료"를 물어봅니다 (선택 기억 가능, 트레이 메뉴에서 초기화)
+- 백그라운드로 유지하면 트레이 아이콘으로 상주하며 수집이 계속됩니다
+- 방송 종료 자동 감지 시 Windows 알림 + 앱 내 모달로 저장 위치를 알려줍니다
+- 저장 위치는 네이티브 폴더 선택 창으로 지정합니다
+
+## 웹 버전 (레거시)
 
 일반 사용자는 토큰을 복사하지 않아도 됩니다. Windows에서 아래 파일을 더블클릭하면 서버가 **백그라운드로** 실행되고 브라우저가 자동으로 열립니다. (CMD 창이 남지 않습니다)
 

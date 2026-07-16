@@ -4,3 +4,5 @@ data/
 .tokens.latest.json
 tokens.json
 npm-debug.log*
+dist/
+settings.json

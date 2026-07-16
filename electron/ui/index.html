@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'">
+  <title>CHZZK Clip Scout</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="logo"></div>
+      <div>
+        <h1>CHZZK Clip Scout</h1>
+        <p class="subtitle">치지직 공식 API로 내 방송 채팅을 자동 저장합니다</p>
+      </div>
+      <div class="header-badges">
+        <span class="badge" id="mode-badge"><span class="dot gray"></span><span id="mode-text">꺼짐</span></span>
+      </div>
+    </header>
+
+    <section class="card" id="status-card">
+      <div id="status-text">불러오는 중...</div>
+    </section>
+
+    <section class="card">
+      <h2>치지직 연결</h2>
+      <div id="connect-area"></div>
+    </section>
+
+    <section class="card">
+      <h2>로그 수집</h2>
+      <p class="warning">지나간 채팅은 저장할 수 없어요. 방송 시작 전에 미리 켜두세요.</p>
+      <div id="collect-area"></div>
+    </section>
+
+    <section class="card hidden" id="result-card">
+      <h2>마지막 수집 결과</h2>
+      <p class="muted" id="result-meta"></p>
+      <div class="filebox">
+        <div class="filebox-title">CSV</div><code id="result-csv"></code>
+        <div class="filebox-title mt8">JSONL</div><code id="result-jsonl"></code>
+      </div>
+      <div class="row mt12">
+        <button class="ghost" id="reveal-btn" type="button">저장 폴더에서 보기</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row space-between">
+        <h2 class="no-margin">실시간 채팅</h2>
+        <span class="muted" id="last-received"></span>
+      </div>
+      <ul id="chat-list"><li><span class="muted">아직 수집된 채팅이 없습니다.</span></li></ul>
+    </section>
+  </main>
+
+  <div class="overlay hidden" id="end-modal">
+    <div class="modal">
+      <h3>수집이 종료되었습니다</h3>
+      <p class="muted" id="modal-reason"></p>
+      <div class="filebox">
+        <div class="filebox-title">CSV</div><code id="modal-csv"></code>
+        <div class="filebox-title mt8">JSONL</div><code id="modal-jsonl"></code>
+      </div>
+      <div class="row mt16">
+        <button class="ghost" id="modal-reveal" type="button">저장 폴더에서 보기</button>
+        <button class="primary" id="modal-close" type="button">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
