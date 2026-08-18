@@ -238,7 +238,7 @@ export class ChatCollector {
       channel_id: data?.channelId || '',
       sender_channel_id: senderHash,
       nickname: profile.nickname || '',
-      user_role: profile.userRoleCode || '',
+      user_role: data?.userRoleCode || profile.userRoleCode || '',
       verified: profile.verifiedMark ?? '',
       content: data?.content || '',
       emoji_keys: Object.keys(emojis).join('|'),
