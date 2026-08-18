@@ -153,7 +153,7 @@ function collectOff(res) {
 
 function finishCollection(reason) {
   if (completion) return;
-  const files = collector?.files || lastFiles;
+  const files = collector ? collector.files : lastFiles;
   completion = {
     finishedAt: new Date().toISOString(),
     reason,
@@ -161,7 +161,9 @@ function finishCollection(reason) {
     jsonlPath: files ? path.resolve(files.jsonlPath) : ''
   };
   lastFiles = files;
-  status = `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}).`;
+  status = files
+    ? `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}).`
+    : `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}). 수집된 채팅이 없어 파일은 저장하지 않았습니다.`;
 }
 
 function openFolder(res) {

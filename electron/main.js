@@ -81,7 +81,7 @@ function setStatus(message) {
 
 function finishCollection(reason) {
   if (completion) return;
-  const files = collector?.files || lastFiles;
+  const files = collector ? collector.files : lastFiles;
   completion = {
     finishedAt: new Date().toISOString(),
     reason,
@@ -89,14 +89,16 @@ function finishCollection(reason) {
     jsonlPath: files ? path.resolve(files.jsonlPath) : ''
   };
   lastFiles = files;
-  statusText = `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}).`;
+  statusText = files
+    ? `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}).`
+    : `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}). 수집된 채팅이 없어 파일은 저장하지 않았습니다.`;
   updateTrayMenu();
   pushState();
 
   if (reason !== 'user') {
     const notice = new Notification({
       title: 'CHZZK Clip Scout — 수집 종료',
-      body: `${REASON_TEXT[reason] || reason}\n${completion.csvPath}`
+      body: `${REASON_TEXT[reason] || reason}\n${completion.csvPath || '수집된 채팅이 없어 파일 없음'}`
     });
     notice.on('click', () => showWindow());
     notice.show();

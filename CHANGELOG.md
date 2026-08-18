@@ -2,6 +2,14 @@
 
 이 프로젝트의 주요 변경사항을 기록합니다.
 
+## 2026-08-18 (9차) — 첫 실측 반영, CSV 스키마 정리
+
+- 실제 방송 수집 성공 후 응답 구조 확정: `userRoleCode`는 `profile` 안에 있음(공식 문서 표기와 다름), 값은 소문자(`streamer`)
+- `chat_channel_id` 컬럼 추가 (CHAT 이벤트의 `chatChannelId`, 다시보기 연결용)
+- `badge_count`(개수) → `badges`(종류) 로 변경. `imageUrl`의 파일명을 뽑아 `streamer` 형태로 저장
+- 수집된 채팅이 0줄이면 헤더만 남은 빈 CSV/JSONL을 저장하지 않고 삭제
+- 문서에 없는 `eventSentAt` 필드가 실제로 내려옴(KST, 타임존 표기 없음) — JSONL 원본에는 그대로 보존
+
 ## 2026-08-18 (8차) — 토큰 만료 안내
 
 - 토큰이 만료된 상태로 수집 ON을 누르면 `401 INVALID_TOKEN` 원문이 그대로 노출되던 문제 수정

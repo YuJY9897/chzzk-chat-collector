@@ -29,6 +29,7 @@ export class ChatCollector {
     this.reconnectTimer = null;
     this.reconnectDeadline = null;
     this.subscribeTimer = null;
+    this.chatCount = 0;
   }
 
   async start({
@@ -43,6 +44,7 @@ export class ChatCollector {
     this.subscribed = false;
     this.endReason = null;
     this.startedAt = parseStartedAt(broadcastStartedAt);
+    this.chatCount = 0;
     this.files = createOutputFiles(broadcastTitle, outputDir);
     this.running = true;
     await this.connect();
@@ -134,6 +136,7 @@ export class ChatCollector {
 
     if (this.endReason) {
       this.running = false;
+      this.discardIfEmpty();
       this.onEnd(this.endReason);
       return;
     }
@@ -141,6 +144,7 @@ export class ChatCollector {
     if (this.stoppedByUser) {
       this.running = false;
       this.onStatus(`연결 종료: ${reason}`);
+      this.discardIfEmpty();
       this.onEnd('user');
       return;
     }
@@ -155,6 +159,7 @@ export class ChatCollector {
     if (Date.now() > this.reconnectDeadline) {
       this.running = false;
       this.onStatus(`연결이 끊긴 뒤 ${RECONNECT_WINDOW_MS / 60000}분 동안 복구하지 못했습니다: ${reason}`);
+      this.discardIfEmpty();
       this.onEnd('connection_lost');
       return;
     }
@@ -200,7 +205,23 @@ export class ChatCollector {
     }
     this.running = false;
     this.onStatus('수집을 종료했습니다.');
+    this.discardIfEmpty();
     return this.files;
+  }
+
+  // 채팅이 한 줄도 없으면 헤더만 남은 빈 파일을 지운다
+  discardIfEmpty() {
+    if (!this.files || this.chatCount > 0) return false;
+    for (const target of [this.files.csvPath, this.files.jsonlPath]) {
+      try {
+        fs.unlinkSync(target);
+      } catch {
+        // 이미 없으면 무시
+      }
+    }
+    this.files = null;
+    this.onStatus('수집된 채팅이 없어 빈 파일은 저장하지 않았습니다.');
+    return true;
   }
 
   clearSubscribeTimer() {
@@ -236,14 +257,17 @@ export class ChatCollector {
       message_time: messageTime.toISOString(),
       elapsed_seconds: this.startedAt ? Math.max(0, Math.floor((messageTime.getTime() - this.startedAt.getTime()) / 1000)) : '',
       channel_id: data?.channelId || '',
+      chat_channel_id: data?.chatChannelId || '',
       sender_channel_id: senderHash,
       nickname: profile.nickname || '',
       user_role: data?.userRoleCode || profile.userRoleCode || '',
       verified: profile.verifiedMark ?? '',
       content: data?.content || '',
       emoji_keys: Object.keys(emojis).join('|'),
-      badge_count: Array.isArray(profile.badges) ? profile.badges.length : 0
+      badges: badgeNames(profile.badges)
     };
+
+    this.chatCount += 1;
 
     fs.appendFileSync(this.files.csvPath, `${toCsv(row)}\n`, 'utf8');
     fs.appendFileSync(this.files.jsonlPath, `${JSON.stringify({ receivedAt: row.received_at, ...data, senderChannelId: senderHash })}\n`, 'utf8');
@@ -276,7 +300,7 @@ function createOutputFiles(title, outputDir) {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     csvPath,
-    'received_at,message_time,elapsed_seconds,channel_id,sender_channel_id,nickname,user_role,verified,content,emoji_keys,badge_count\n',
+    'received_at,message_time,elapsed_seconds,channel_id,chat_channel_id,sender_channel_id,nickname,user_role,verified,content,emoji_keys,badges\n',
     'utf8'
   );
   return { csvPath, jsonlPath };
@@ -288,14 +312,24 @@ function toCsv(row) {
     row.message_time,
     row.elapsed_seconds,
     row.channel_id,
+    row.chat_channel_id,
     row.sender_channel_id,
     row.nickname,
     row.user_role,
     row.verified,
     row.content,
     row.emoji_keys,
-    row.badge_count
+    row.badges
   ].map(csvEscape).join(',');
+}
+
+// badges는 [{ imageUrl: '.../streamer.png' }] 형태 — 파일명만 뽑아 종류로 저장
+function badgeNames(badges) {
+  if (!Array.isArray(badges)) return '';
+  return badges
+    .map((badge) => String(badge?.imageUrl || '').split('/').pop().replace(/\.\w+$/, ''))
+    .filter(Boolean)
+    .join('|');
 }
 
 function csvEscape(value) {
