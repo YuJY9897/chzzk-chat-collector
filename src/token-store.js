@@ -8,7 +8,12 @@ export function readTokens() {
 }
 
 export function writeTokens(tokens) {
-  fs.writeFileSync(TOKEN_PATH, `${JSON.stringify(tokens, null, 2)}\n`, 'utf8');
+  const saved = { ...tokens, savedAt: new Date().toISOString() };
+  fs.writeFileSync(TOKEN_PATH, `${JSON.stringify(saved, null, 2)}\n`, 'utf8');
+}
+
+export function connectedAt() {
+  return readTokens()?.savedAt || null;
 }
 
 export function clearTokens() {

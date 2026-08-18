@@ -35,6 +35,12 @@ const REASON_TEXT = {
   connection_lost: '연결이 5분 이상 끊겨 수집을 종료했습니다.'
 };
 
+function connectedLabel(savedAt) {
+  if (!savedAt) return '한 번 연결하면 앱을 다시 켜도 유지됩니다.';
+  const days = Math.floor((Date.now() - new Date(savedAt).getTime()) / 86400000);
+  return `마지막 연결 ${new Date(savedAt).toLocaleDateString('ko-KR')} (${days}일 전). 오래되면 만료되어 재연결이 필요합니다.`;
+}
+
 function render(next) {
   const prevMode = state?.mode;
   state = next;
@@ -56,7 +62,7 @@ function render(next) {
         <button class="ghost" disabled>✓ 치지직 계정이 연결되어 있습니다</button>
         <button class="ghost small" id="logout-btn" ${mode === 'idle' ? '' : 'disabled'}>연결 끊기</button>
       </div>
-      <p class="muted">한 번 연결하면 앱을 다시 켜도 유지됩니다.</p>`;
+      <p class="muted">${connectedLabel(state.connectedAt)}</p>`;
     $('logout-btn')?.addEventListener('click', async () => { await window.api.logout(); refresh(); });
   } else {
     $('connect-area').innerHTML = `

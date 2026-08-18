@@ -15,7 +15,8 @@ process.chdir(baseDir);
 // dotenv가 올바른 폴더의 .env를 읽도록 chdir 이후에 로드
 const { ChatCollector } = await import('../src/chat-collector.js');
 const { createAuthUrl, exchangeCode } = await import('../src/oauth.js');
-const { clearTokens, hasTokens, readTokens, writeTokens } = await import('../src/token-store.js');
+const { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } = await import('../src/token-store.js');
+const { isAuthError } = await import('../src/http.js');
 
 const SETTINGS_PATH = path.join(baseDir, 'settings.json');
 const REASON_TEXT = {
@@ -56,6 +57,7 @@ function getMode() {
 function getState() {
   return {
     connected: hasTokens(),
+    connectedAt: connectedAt(),
     mode: getMode(),
     subscribed: Boolean(collector?.subscribed),
     status: statusText,
@@ -324,6 +326,12 @@ ipcMain.handle('collect:on', async (_event, options) => {
     lastFiles = await collector.start({ broadcastTitle, broadcastStartedAt, outputDir });
   } catch (error) {
     collector = null;
+    if (isAuthError(error)) {
+      clearTokens();
+      setStatus('치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.');
+      pushState();
+      return { ok: false, error: '치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.' };
+    }
     return { ok: false, error: error.message };
   }
   updateTrayMenu();

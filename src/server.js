@@ -5,7 +5,8 @@ import path from 'node:path';
 import { URL } from 'node:url';
 import { optionalEnv } from './config.js';
 import { createAuthUrl, exchangeCode } from './oauth.js';
-import { clearTokens, hasTokens, readTokens, writeTokens } from './token-store.js';
+import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './token-store.js';
+import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
@@ -118,6 +119,10 @@ async function collectOn(req, res) {
     lastFiles = await collector.start({ broadcastTitle, broadcastStartedAt, outputDir });
   } catch (error) {
     collector = null;
+    if (isAuthError(error)) {
+      clearTokens();
+      return sendHtml(res, renderMessage('치지직 연결 만료', '치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.', '/'));
+    }
     return sendHtml(res, renderMessage('시작 실패', error.message, '/'));
   }
 
@@ -224,6 +229,7 @@ function quitApp(res) {
 function getStatus() {
   return {
     connected: hasTokens(),
+    connectedAt: connectedAt(),
     mode: getMode(),
     subscribed: Boolean(collector?.subscribed),
     status,
@@ -267,7 +273,7 @@ function renderHome() {
         <button class="ghost" disabled>✓ 치지직 계정이 연결되어 있습니다</button>
         <form method="post" action="/api/logout"><button class="ghost small" type="submit" ${mode === 'idle' ? '' : 'disabled'}>연결 끊기</button></form>
       </div>
-      <p class="muted">한 번 연결하면 앱을 다시 켜도 유지됩니다.</p>`
+      <p class="muted">${connectedLabel(current.connectedAt)}</p>`
     : `<div class="row">
         <a class="button primary" href="/auth/start">치지직 계정 연결하기</a>
       </div>
@@ -516,6 +522,12 @@ function renderHome() {
   </script>
 </body>
 </html>`;
+}
+
+function connectedLabel(savedAt) {
+  if (!savedAt) return '한 번 연결하면 앱을 다시 켜도 유지됩니다.';
+  const days = Math.floor((Date.now() - new Date(savedAt).getTime()) / 86400000);
+  return `마지막 연결 ${new Date(savedAt).toLocaleDateString('ko-KR')} (${days}일 전). 오래되면 만료되어 재연결이 필요합니다.`;
 }
 
 function renderMessage(title, body, backHref = '') {

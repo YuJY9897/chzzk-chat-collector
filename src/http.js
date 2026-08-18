@@ -24,3 +24,8 @@ function parseJson(text) {
 function isErrorPayload(payload) {
   return payload && typeof payload.code !== 'undefined' && payload.code !== 200;
 }
+
+// 401 / INVALID_TOKEN = 치지직 연결(토큰) 만료
+export function isAuthError(error) {
+  return /401|INVALID_TOKEN/i.test(error?.message || '');
+}
