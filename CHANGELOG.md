@@ -2,6 +2,14 @@
 
 이 프로젝트의 주요 변경사항을 기록합니다.
 
+## 2026-08-18 (10차) — 더미 로그 생성기
+
+- `tools/make-dummy-log.mjs` 추가. 분석/UI 개발용 가짜 채팅 로그를 실제와 같은 포맷으로 생성
+- 포맷 어긋남을 막으려고 CSV/JSONL 쓰기는 `ChatCollector.writeChat`을 그대로 재사용
+- 하이라이트 구간 5개를 의도적으로 심고 `*.highlights.json`에 정답지를 함께 저장 (감지 알고리즘 채점용)
+- 기본값: 3시간 방송, 약 4000줄. 인자로 조절 `node tools/make-dummy-log.mjs [출력폴더] [줄수] [분]`
+- 출력 폴더 `test-data/`는 .gitignore 처리
+
 ## 2026-08-18 (9차) — 첫 실측 반영, CSV 스키마 정리
 
 - 실제 방송 수집 성공 후 응답 구조 확정: `userRoleCode`는 `profile` 안에 있음(공식 문서 표기와 다름), 값은 소문자(`streamer`)

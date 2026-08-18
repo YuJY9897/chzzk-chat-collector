@@ -6,3 +6,4 @@ tokens.json
 npm-debug.log*
 dist/
 settings.json
+test-data/
