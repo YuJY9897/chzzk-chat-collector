@@ -7,7 +7,8 @@
 - `tools/make-dummy-log.mjs` 추가. 분석/UI 개발용 가짜 채팅 로그를 실제와 같은 포맷으로 생성
 - 포맷 어긋남을 막으려고 CSV/JSONL 쓰기는 `ChatCollector.writeChat`을 그대로 재사용
 - 하이라이트 구간 5개를 의도적으로 심고 `*.highlights.json`에 정답지를 함께 저장 (감지 알고리즘 채점용)
-- 기본값: 3시간 방송, 약 4000줄. 인자로 조절 `node tools/make-dummy-log.mjs [출력폴더] [줄수] [분]`
+- 채팅량을 동시시청자 수에서 역산(분당 채팅 ≈ 시청자의 20%), 발화 빈도는 Zipf-Mandelbrot 분포로 헤비 채터/눈팅족 재현
+- 사용법: `node tools/make-dummy-log.mjs [출력폴더] [동시시청자] [분]` (기본 300명 / 180분)
 - 출력 폴더 `test-data/`는 .gitignore 처리
 
 ## 2026-08-18 (9차) — 첫 실측 반영, CSV 스키마 정리
