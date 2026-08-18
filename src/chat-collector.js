@@ -3,14 +3,21 @@ import fs from 'node:fs';
 import path from 'node:path';
 import io from 'socket.io-client';
 import { OPEN_API_BASE_URL, bearerHeaders, optionalEnv } from './config.js';
-import { apiFetch } from './http.js';
+import { apiFetch, isAuthError } from './http.js';
 import { refreshAccessToken } from './refresh.js';
 
 const RECONNECT_DELAY_MS = 5000;
 const RECONNECT_WINDOW_MS = 5 * 60 * 1000;
-const SUBSCRIBE_RETRY_MS = 30000;
 
-// onEnd(reason) reasons: 'user' | 'broadcast_end' | 'connection_lost'
+// 치지직에는 "방송 시작" 이벤트가 없어 구독을 재시도하며 기다리는 수밖에 없다.
+// 방송 직전일수록 촘촘히, 오래 기다릴수록 뜸하게 확인한다.
+function subscribeRetryMs(waitedMs) {
+  if (waitedMs < 2 * 60 * 1000) return 5000;
+  if (waitedMs < 10 * 60 * 1000) return 15000;
+  return 30000;
+}
+
+// onEnd(reason) reasons: 'user' | 'broadcast_end' | 'connection_lost' | 'auth_expired'
 export class ChatCollector {
   constructor({ tokens, onChat = () => {}, onStatus = () => {}, onTokens = () => {}, onEnd = () => {} }) {
     this.tokens = tokens;
@@ -30,6 +37,7 @@ export class ChatCollector {
     this.reconnectDeadline = null;
     this.subscribeTimer = null;
     this.chatCount = 0;
+    this.waitingSince = null;
   }
 
   async start({
@@ -45,6 +53,7 @@ export class ChatCollector {
     this.endReason = null;
     this.startedAt = parseStartedAt(broadcastStartedAt);
     this.chatCount = 0;
+    this.waitingSince = null;
     this.files = createOutputFiles(broadcastTitle, outputDir);
     this.running = true;
     await this.connect();
@@ -119,10 +128,32 @@ export class ChatCollector {
         headers: bearerHeaders(accessToken)
       });
       this.subscribed = true;
-      this.onStatus('채팅 구독 완료. 지금부터 올라오는 채팅을 저장합니다.');
+
+      if (this.waitingSince) {
+        // 구독 실패 -> 성공으로 바뀐 순간이 곧 방송 시작이다 (오차는 재시도 간격만큼)
+        if (!this.startedAt) {
+          this.startedAt = new Date();
+          this.onStatus('방송 시작을 감지했습니다. 지금부터 채팅을 저장합니다.');
+        } else {
+          this.onStatus('방송 시작을 감지했습니다. 입력하신 시작 시각 기준으로 저장합니다.');
+        }
+        this.waitingSince = null;
+      } else {
+        this.onStatus('이미 방송 중이라 바로 수집을 시작합니다.');
+      }
     } catch (error) {
-      this.onStatus(`아직 방송 전이거나 채팅 구독에 실패했습니다. ${SUBSCRIBE_RETRY_MS / 1000}초 후 다시 시도합니다. (${error.message})`);
-      this.subscribeTimer = setTimeout(() => this.trySubscribe(accessToken, sessionKey), SUBSCRIBE_RETRY_MS);
+      // 토큰이 죽은 거면 기다려도 소용없다
+      if (isAuthError(error)) {
+        this.endReason = 'auth_expired';
+        this.onStatus('치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.');
+        if (this.socket) this.socket.close();
+        return;
+      }
+
+      if (!this.waitingSince) this.waitingSince = Date.now();
+      const delay = subscribeRetryMs(Date.now() - this.waitingSince);
+      this.onStatus(`방송 대기 중입니다. ${delay / 1000}초마다 방송 시작을 확인합니다.`);
+      this.subscribeTimer = setTimeout(() => this.trySubscribe(accessToken, sessionKey), delay);
     }
   }
 

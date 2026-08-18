@@ -22,7 +22,8 @@ const SETTINGS_PATH = path.join(baseDir, 'settings.json');
 const REASON_TEXT = {
   user: '사용자 종료',
   broadcast_end: '방송 종료 감지',
-  connection_lost: '연결 끊김(5분 초과)'
+  connection_lost: '연결 끊김(5분 초과)',
+  auth_expired: '치지직 연결 만료'
 };
 
 let win = null;
@@ -313,6 +314,7 @@ ipcMain.handle('collect:on', async (_event, options) => {
     onTokens: writeTokens,
     onStatus: (message) => setStatus(message),
     onEnd: (reason) => {
+      if (reason === 'auth_expired') clearTokens();
       if (reason !== 'user') finishCollection(reason);
       updateTrayMenu();
     },

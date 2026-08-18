@@ -32,7 +32,8 @@ function todayFileName() {
 const REASON_TEXT = {
   user: '사용자 종료',
   broadcast_end: '방송 종료가 감지되어 자동으로 저장을 마쳤습니다.',
-  connection_lost: '연결이 5분 이상 끊겨 수집을 종료했습니다.'
+  connection_lost: '연결이 5분 이상 끊겨 수집을 종료했습니다.',
+  auth_expired: '치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.'
 };
 
 function connectedLabel(savedAt) {

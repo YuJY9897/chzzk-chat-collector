@@ -23,7 +23,8 @@ const recentChats = [];
 const REASON_TEXT = {
   user: '사용자 종료',
   broadcast_end: '방송 종료 감지',
-  connection_lost: '연결 끊김(5분 초과)'
+  connection_lost: '연결 끊김(5분 초과)',
+  auth_expired: '치지직 연결 만료'
 };
 
 const server = http.createServer(async (req, res) => {
@@ -106,6 +107,7 @@ async function collectOn(req, res) {
     onTokens: writeTokens,
     onStatus: (message) => { status = message; },
     onEnd: (reason) => {
+      if (reason === 'auth_expired') clearTokens();
       if (reason !== 'user') finishCollection(reason);
     },
     onChat: (chat) => {
@@ -462,7 +464,7 @@ function renderHome() {
   </div>
 
   <script>
-    var REASON_TEXT = { broadcast_end: '방송 종료가 감지되어 자동으로 저장을 마쳤습니다.', connection_lost: '연결이 5분 이상 끊겨 수집을 종료했습니다.', user: '사용자가 종료했습니다.' };
+    var REASON_TEXT = { broadcast_end: '방송 종료가 감지되어 자동으로 저장을 마쳤습니다.', connection_lost: '연결이 5분 이상 끊겨 수집을 종료했습니다.', auth_expired: '치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.', user: '사용자가 종료했습니다.' };
     var renderedMode = ${JSON.stringify(mode)};
     var lastCompletion = ${JSON.stringify(completion ? completion.finishedAt : '')};
 
