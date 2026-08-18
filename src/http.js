@@ -27,5 +27,10 @@ function isErrorPayload(payload) {
 
 // 401 / INVALID_TOKEN = 치지직 연결(토큰) 만료
 export function isAuthError(error) {
-  return /401|INVALID_TOKEN/i.test(error?.message || '');
+  return /(^|\D)401(\D|$)|INVALID_TOKEN/i.test(error?.message || '');
+}
+
+// 채팅 구독 요청의 404 = 방송 중이 아님
+export function isNotFoundError(error) {
+  return /(^|\D)404(\D|$)|NOT_FOUND/i.test(error?.message || '');
 }
