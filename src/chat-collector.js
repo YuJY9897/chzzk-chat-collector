@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import io from 'socket.io-client';
 import { OPEN_API_BASE_URL, bearerHeaders, optionalEnv } from './config.js';
-import { apiFetch, isAuthError, isNotFoundError } from './http.js';
+import { apiFetch, isAuthError } from './http.js';
 import { refreshAccessToken } from './refresh.js';
 
 const RECONNECT_DELAY_MS = 5000;
@@ -17,12 +17,10 @@ function subscribeRetryMs(waitedMs) {
   return 30000;
 }
 
-// 방송을 꺼도 revoked 이벤트가 오지 않고 소켓도 끊기지 않는 것을 확인했다(2026-08-18).
-// 세션 목록의 subscribedEvents도 종료 후 그대로 남아 쓸 수 없어서,
-// 임시 세션으로 구독을 시도해 방송 여부를 판별한다. 방송 중이 아니면 404가 떨어진다.
-// 임시 세션은 소켓 접속을 하지 않으므로 세션 목록에 쌓이지 않고, 진행 중인 구독도 건드리지 않는다.
-const LIVE_CHECK_MS = 60000;
-const LIVE_CHECK_QUIET_MS = 30000; // 최근 채팅이 있으면 확인을 건너뛴다
+// 확인된 사실(2026-09-04): 채팅 구독은 방송 여부와 무관하게 항상 성공한다.
+// 방송을 꺼도 revoked 이벤트가 오지 않고 소켓도 끊기지 않으며,
+// 공식 API에 내 채널의 방송 상태를 알려주는 엔드포인트가 없다.
+// 따라서 방송 시작/종료를 스스로 판별할 방법이 없어 사용자가 직접 종료해야 한다.
 
 // onEnd(reason) reasons: 'user' | 'broadcast_end' | 'connection_lost' | 'auth_expired'
 export class ChatCollector {
@@ -45,7 +43,6 @@ export class ChatCollector {
     this.subscribeTimer = null;
     this.chatCount = 0;
     this.waitingSince = null;
-    this.liveCheckTimer = null;
     this.lastChatAt = null;
   }
 
@@ -146,19 +143,9 @@ export class ChatCollector {
       });
       this.subscribed = true;
 
-      if (this.waitingSince) {
-        // 구독 실패 -> 성공으로 바뀐 순간이 곧 방송 시작이다 (오차는 재시도 간격만큼)
-        if (!this.startedAt) {
-          this.startedAt = new Date();
-          this.onStatus('방송 시작을 감지했습니다. 지금부터 채팅을 저장합니다.');
-        } else {
-          this.onStatus('방송 시작을 감지했습니다. 입력하신 시작 시각 기준으로 저장합니다.');
-        }
-        this.waitingSince = null;
-      } else {
-        this.onStatus('이미 방송 중이라 바로 수집을 시작합니다.');
-      }
-      this.startLiveCheck(accessToken);
+      this.waitingSince = null;
+      // 구독 성공은 방송 중이라는 뜻이 아니다. 방송이 켜지면 채팅이 들어오기 시작할 뿐이다.
+      this.onStatus('채팅 수집을 시작했습니다. 방송이 켜지면 채팅이 저장됩니다.');
     } catch (error) {
       // 토큰이 죽은 거면 기다려도 소용없다
       if (isAuthError(error)) {
@@ -170,66 +157,8 @@ export class ChatCollector {
 
       if (!this.waitingSince) this.waitingSince = Date.now();
       const delay = subscribeRetryMs(Date.now() - this.waitingSince);
-      this.onStatus(`방송 대기 중입니다. ${delay / 1000}초마다 방송 시작을 확인합니다.`);
+      this.onStatus(`채팅 구독에 실패했습니다. ${delay / 1000}초 후 다시 시도합니다. (${error.message})`);
       this.subscribeTimer = setTimeout(() => this.trySubscribe(accessToken, sessionKey), delay);
-    }
-  }
-
-  // 방송이 아직 켜져 있는지 주기적으로 확인한다
-  startLiveCheck(accessToken) {
-    this.clearLiveCheckTimer();
-    this.liveCheckTimer = setTimeout(async () => {
-      this.liveCheckTimer = null;
-      if (!this.running || this.paused) return;
-
-      // 방금 채팅이 들어왔으면 확인할 필요가 없다
-      if (this.lastChatAt && Date.now() - this.lastChatAt < LIVE_CHECK_QUIET_MS) {
-        this.startLiveCheck(accessToken);
-        return;
-      }
-
-      const result = await this.probeBroadcast(accessToken);
-      if (result === 'ended') {
-        this.endReason = 'broadcast_end';
-        this.onStatus('방송 종료를 확인했습니다. 수집을 마무리합니다.');
-        if (this.socket) this.socket.close();
-        else this.handleDisconnect('broadcast_end');
-        return;
-      }
-      if (result === 'auth') {
-        this.endReason = 'auth_expired';
-        this.onStatus('치지직 연결이 만료되었습니다. 계정을 다시 연결해 주세요.');
-        if (this.socket) this.socket.close();
-        else this.handleDisconnect('auth_expired');
-        return;
-      }
-      this.startLiveCheck(accessToken);
-    }, LIVE_CHECK_MS);
-  }
-
-  // 임시 세션으로 구독을 시도해 방송 여부를 판별한다
-  async probeBroadcast(accessToken) {
-    try {
-      const session = await apiFetch(`${OPEN_API_BASE_URL}/open/v1/sessions/auth`, {
-        headers: bearerHeaders(accessToken)
-      });
-      const key = new URL(session.url).searchParams.get('auth');
-      await apiFetch(`${OPEN_API_BASE_URL}/open/v1/sessions/events/subscribe/chat?sessionKey=${encodeURIComponent(key)}`, {
-        method: 'POST',
-        headers: bearerHeaders(accessToken)
-      });
-      return 'live';
-    } catch (error) {
-      if (isNotFoundError(error)) return 'ended';
-      if (isAuthError(error)) return 'auth';
-      return 'unknown'; // 일시적 오류는 다음 확인으로 넘긴다
-    }
-  }
-
-  clearLiveCheckTimer() {
-    if (this.liveCheckTimer) {
-      clearTimeout(this.liveCheckTimer);
-      this.liveCheckTimer = null;
     }
   }
 
@@ -340,7 +269,6 @@ export class ChatCollector {
 
   clearTimers() {
     this.clearSubscribeTimer();
-    this.clearLiveCheckTimer();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

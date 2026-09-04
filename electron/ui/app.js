@@ -39,7 +39,9 @@ const REASON_TEXT = {
 function connectedLabel(savedAt) {
   if (!savedAt) return '한 번 연결하면 앱을 다시 켜도 유지됩니다.';
   const days = Math.floor((Date.now() - new Date(savedAt).getTime()) / 86400000);
-  return `마지막 연결 ${new Date(savedAt).toLocaleDateString('ko-KR')} (${days}일 전). 오래되면 만료되어 재연결이 필요합니다.`;
+  const when = days === 0 ? '오늘' : days === 1 ? '어제' : `${days}일 전`;
+  const base = `마지막 연결 ${when}`;
+  return days < 14 ? base : `${base}. 수집이 안 되면 다시 연결해 주세요.`;
 }
 
 function fmtDuration(sec) {
