@@ -42,6 +42,32 @@ function connectedLabel(savedAt) {
   return `마지막 연결 ${new Date(savedAt).toLocaleDateString('ko-KR')} (${days}일 전). 오래되면 만료되어 재연결이 필요합니다.`;
 }
 
+function fmtDuration(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function renderHighlights(list) {
+  if (!list || !list.length) return '<p class="muted mt12">하이라이트로 볼 만한 구간이 없습니다.</p>';
+  const items = list
+    .map((h, i) => `
+      <li class="hl">
+        <span class="hl-rank">${i + 1}</span>
+        <div class="hl-body">
+          <div class="hl-time">${fmtDuration(h.startSec)} ~ ${fmtDuration(h.endSec)}
+            <span class="muted">${h.durationSec}초 · 분당 ${h.baselinePerMin}→${h.peakPerMin}개</span>
+          </div>
+          <div class="hl-msg">${h.topMessages.map((m) => `${esc(m.content)} <span class="muted">x${m.count}</span>`).join(' · ')}</div>
+        </div>
+      </li>`)
+    .join('');
+  return `<h3 class="hl-title">하이라이트 ${list.length}개</h3><ul class="hl-list">${items}</ul>`;
+}
+
 function render(next) {
   const prevMode = state?.mode;
   state = next;
@@ -81,6 +107,7 @@ function render(next) {
     $('result-meta').textContent = `${state.completion.reason === 'user' ? '사용자 종료' : (REASON_TEXT[state.completion.reason] || state.completion.reason)} · ${fmtTime(state.completion.finishedAt)}`;
     $('result-csv').textContent = state.completion.csvPath;
     $('result-jsonl').textContent = state.completion.jsonlPath;
+    $('highlight-area').innerHTML = renderHighlights(state.completion.highlights);
   } else {
     $('result-card').classList.add('hidden');
   }

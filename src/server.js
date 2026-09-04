@@ -8,6 +8,7 @@ import { createAuthUrl, exchangeCode } from './oauth.js';
 import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './token-store.js';
 import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
+import { analyzeFile } from './highlight.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
@@ -160,7 +161,8 @@ function finishCollection(reason) {
     finishedAt: new Date().toISOString(),
     reason,
     csvPath: files ? path.resolve(files.csvPath) : '',
-    jsonlPath: files ? path.resolve(files.jsonlPath) : ''
+    jsonlPath: files ? path.resolve(files.jsonlPath) : '',
+    highlights: files ? analyzeFile(path.resolve(files.csvPath)) : []
   };
   lastFiles = files;
   status = files
@@ -331,6 +333,7 @@ function renderHome() {
           <div class="filebox-title">CSV</div><code>${escapeHtml(completion.csvPath)}</code>
           <div class="filebox-title" style="margin-top:8px;">JSONL</div><code>${escapeHtml(completion.jsonlPath)}</code>
         </div>
+        ${renderHighlights(completion.highlights)}
         <div class="row" style="margin-top:12px;">
           <button class="ghost" type="button" onclick="openFolder()">저장 폴더 열기</button>
         </div>
@@ -526,6 +529,31 @@ function renderHome() {
   </script>
 </body>
 </html>`;
+}
+
+function renderHighlights(list) {
+  if (!list || !list.length) return '<p class="muted" style="margin-top:12px;">하이라이트로 볼 만한 구간이 없습니다.</p>';
+  const items = list
+    .map((h, i) => `<li style="display:flex;gap:12px;align-items:center;padding:7px 2px;border-bottom:1px solid #1a211e;">
+        <span style="width:22px;height:22px;border-radius:6px;flex-shrink:0;background:rgba(0,217,165,.12);color:#57e6c3;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;">${i + 1}</span>
+        <span style="min-width:0;">
+          <span style="color:#cfe0d8;font-size:13px;">${fmtClock(h.startSec)} ~ ${fmtClock(h.endSec)}</span>
+          <span class="muted" style="font-size:12px;margin-left:6px;">${h.durationSec}초 · 분당 ${h.baselinePerMin}→${h.peakPerMin}개</span>
+          <br><span class="muted" style="font-size:12.5px;">${h.topMessages.map((m) => `${escapeHtml(m.content)} x${m.count}`).join(' · ')}</span>
+        </span>
+      </li>`)
+    .join('');
+  return `<h3 style="font-size:13px;color:#c9d6d0;margin:16px 0 0;">하이라이트 ${list.length}개</h3>
+    <ul style="list-style:none;padding:0;margin:8px 0 0;">${items}</ul>`;
+}
+
+function fmtClock(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
 function connectedLabel(savedAt) {

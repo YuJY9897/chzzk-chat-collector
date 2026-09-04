@@ -2,7 +2,7 @@
 // 같은 이름의 *.highlights.json(더미 정답지)이 있으면 채점까지 한다.
 // 사용: node tools/detect-highlights.mjs <csv경로> [임계값]
 import fs from 'node:fs';
-import { detectHighlights, formatTime } from '../src/highlight.js';
+import { detectHighlights, formatTime, loadRowsFromCsv } from '../src/highlight.js';
 
 const csvPath = process.argv[2];
 const threshold = Number(process.argv[3] || 3);
@@ -12,7 +12,7 @@ if (!csvPath || !fs.existsSync(csvPath)) {
   process.exit(1);
 }
 
-const rows = loadRows(csvPath);
+const rows = loadRowsFromCsv(csvPath);
 console.log(`${csvPath}\n채팅 ${rows.length}줄 / ${formatTime(Math.max(...rows.map((r) => r.sec)))} 분량 / 임계값 ${threshold}\n`);
 
 const found = detectHighlights(rows, { threshold });
@@ -49,56 +49,4 @@ if (fs.existsSync(answerPath)) {
 
 function pct(value) {
   return `${Math.round(value * 100)}%`;
-}
-
-function loadRows(file) {
-  const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
-  const header = parseCsvLine(lines[0]);
-  const idx = (name) => header.indexOf(name);
-  const out = [];
-  let firstTime = null;
-
-  for (const line of lines.slice(1)) {
-    if (!line.trim()) continue;
-    const cols = parseCsvLine(line);
-    const time = new Date(cols[idx('message_time')]).getTime();
-    if (firstTime === null) firstTime = time;
-    // elapsed_seconds가 비어 있으면(방송 시작 시각 미입력) 첫 채팅 기준으로 계산
-    const elapsed = cols[idx('elapsed_seconds')];
-    out.push({
-      sec: elapsed === '' ? Math.floor((time - firstTime) / 1000) : Number(elapsed),
-      sender: cols[idx('sender_channel_id')],
-      nickname: cols[idx('nickname')],
-      content: cols[idx('content')]
-    });
-  }
-  return out;
-}
-
-function parseCsvLine(line) {
-  const out = [];
-  let value = '';
-  let quoted = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const ch = line[i];
-    if (quoted) {
-      if (ch === '"' && line[i + 1] === '"') {
-        value += '"';
-        i += 1;
-      } else if (ch === '"') {
-        quoted = false;
-      } else {
-        value += ch;
-      }
-    } else if (ch === '"') {
-      quoted = true;
-    } else if (ch === ',') {
-      out.push(value);
-      value = '';
-    } else {
-      value += ch;
-    }
-  }
-  out.push(value);
-  return out;
 }

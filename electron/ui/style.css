@@ -128,3 +128,16 @@ li span { color: #a9b8b1; word-break: break-all; }
 .path-row { display: flex; gap: 8px; align-items: center; }
 .path-row input { flex: 1; }
 .path-row button { flex-shrink: 0; white-space: nowrap; }
+
+.hl-title { font-size: 13px; color: #c9d6d0; margin: 16px 0 0; }
+.hl-list { max-height: none; margin-top: 8px; }
+li.hl { align-items: center; gap: 12px; }
+.hl-rank {
+  width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0;
+  background: rgba(0,217,165,.12); color: #57e6c3;
+  font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+}
+.hl-body { min-width: 0; }
+.hl-time { color: #cfe0d8; font-size: 13px; font-variant-numeric: tabular-nums; }
+.hl-time .muted { margin-left: 6px; font-size: 12px; }
+.hl-msg { color: #a9b8b1; font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

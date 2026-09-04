@@ -17,6 +17,7 @@ const { ChatCollector } = await import('../src/chat-collector.js');
 const { createAuthUrl, exchangeCode } = await import('../src/oauth.js');
 const { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } = await import('../src/token-store.js');
 const { isAuthError } = await import('../src/http.js');
+const { analyzeFile } = await import('../src/highlight.js');
 
 const SETTINGS_PATH = path.join(baseDir, 'settings.json');
 const REASON_TEXT = {
@@ -87,7 +88,8 @@ function finishCollection(reason) {
     finishedAt: new Date().toISOString(),
     reason,
     csvPath: files ? path.resolve(files.csvPath) : '',
-    jsonlPath: files ? path.resolve(files.jsonlPath) : ''
+    jsonlPath: files ? path.resolve(files.jsonlPath) : '',
+    highlights: files ? analyzeFile(path.resolve(files.csvPath)) : []
   };
   lastFiles = files;
   statusText = files

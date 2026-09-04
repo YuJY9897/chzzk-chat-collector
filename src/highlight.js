@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+
 // 채팅 로그에서 하이라이트 구간을 찾는다.
 // 채팅량만 보면 방송 초반 인사나 꾸준한 수다에도 걸리므로
 // (1) 채팅 폭증 (2) 반응성 표현 비율 (3) 참여자 수 급증 을 함께 본다.
@@ -129,4 +131,66 @@ export function formatTime(sec) {
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+// 수집이 끝난 파일을 분석한다. 앱에서 쓰므로 어떤 이유로도 던지지 않는다.
+export function analyzeFile(csvPath, options = {}) {
+  try {
+    if (!csvPath || !fs.existsSync(csvPath)) return [];
+    return detectHighlights(loadRowsFromCsv(csvPath), { topN: 5, ...options });
+  } catch {
+    return [];
+  }
+}
+
+export function loadRowsFromCsv(file) {
+  const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+  const header = parseCsvLine(lines[0]);
+  const idx = (name) => header.indexOf(name);
+  const out = [];
+  let firstTime = null;
+
+  for (const line of lines.slice(1)) {
+    if (!line.trim()) continue;
+    const cols = parseCsvLine(line);
+    const time = new Date(cols[idx('message_time')]).getTime();
+    if (firstTime === null) firstTime = time;
+    // elapsed_seconds가 비어 있으면(방송 시작 시각 미입력) 첫 채팅 기준으로 계산
+    const elapsed = cols[idx('elapsed_seconds')];
+    out.push({
+      sec: elapsed === '' ? Math.floor((time - firstTime) / 1000) : Number(elapsed),
+      sender: cols[idx('sender_channel_id')],
+      nickname: cols[idx('nickname')],
+      content: cols[idx('content')]
+    });
+  }
+  return out;
+}
+
+function parseCsvLine(line) {
+  const out = [];
+  let value = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quoted) {
+      if (ch === '"' && line[i + 1] === '"') {
+        value += '"';
+        i += 1;
+      } else if (ch === '"') {
+        quoted = false;
+      } else {
+        value += ch;
+      }
+    } else if (ch === '"') {
+      quoted = true;
+    } else if (ch === ',') {
+      out.push(value);
+      value = '';
+    } else {
+      value += ch;
+    }
+  }
+  out.push(value);
+  return out;
 }
