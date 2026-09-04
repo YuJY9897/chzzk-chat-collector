@@ -99,12 +99,77 @@ export function detectHighlights(rows, options = {}) {
         peakPerMin: Math.round((peak.count / WINDOW_SEC) * 60),
         baselinePerMin: Math.round((peak.baseline / WINDOW_SEC) * 60),
         reactionRate: Number(peak.reactionRate.toFixed(2)),
+        kind: characterize(inRange),
+        keywords: keywordsFor(inRange, rows),
         topMessages: topMessages(inRange)
       };
     })
     .filter((seg) => seg.durationSec >= MIN_DURATION_SEC)
     .sort((a, b) => b.score - a.score)
     .slice(0, topN);
+}
+
+// 반응 종류별 표현. 어떤 성격의 구간인지 라벨을 붙이는 데 쓴다.
+const REACTION_KINDS = [
+  { kind: '웃음', re: /ㅋ{3,}|ㅎ{3,}|개웃|웃겨|배아파/ },
+  { kind: '클립 요청', re: /클립|박제|다시\s*보여|짤/ },
+  { kind: '놀람', re: /헐|대박|미친|실화|소름|지렸|와+아+|ㅗㅜㅑ|뭐야|뭐임|[?!]{2,}/ },
+  { kind: '감탄', re: /레전드|갓|지리|멋있|잘한다|성공/ },
+  { kind: '안타까움', re: /ㅠ{3,}|ㅜ{3,}|아깝|아쉽|망했/ }
+];
+
+// 조사·감탄사처럼 아무 구간에나 나오는 말은 키워드로 쓰지 않는다
+const STOPWORDS = new Set(['그리고', '근데', '그냥', '진짜', '너무', '완전', '이거', '저거', '그거', '지금',
+  '오늘', '내일', '어제', '우리', '자기', '사람', '생각', '하는', '하고', '해서', '있는', '있다', '없다',
+  '같은', '같아', '보고', '보다', '이제', '아직', '다시', '많이', '조금', '진심', '이건', '그건',
+  '아니', '이걸', '한다고', '그래서', '하지만', '그러면', '이렇게', '그렇게', '어떻게']);
+
+// 이 구간에서만 유독 많이 나온 단어. 방송 전체 빈도와 비교해 뽑는다(AI 없이 주제 짐작).
+function keywordsFor(inRange, allRows, limit = 4) {
+  const tokenize = (text) => (text.match(/[가-힣]{2,}|[A-Za-z]{3,}/g) || [])
+    // 자모만 있는 말, 같은 글자만 반복한 말(어어어어)은 주제어가 아니다
+    .filter((w) => !STOPWORDS.has(w) && !/^[ㄱ-ㅎㅏ-ㅣ]+$/.test(w) && new Set(w).size > 1);
+
+  const count = (rows) => {
+    const map = new Map();
+    for (const row of rows) for (const w of tokenize(row.content)) map.set(w, (map.get(w) || 0) + 1);
+    return map;
+  };
+
+  const inCounts = count(inRange);
+  const allCounts = count(allRows);
+  const inTotal = [...inCounts.values()].reduce((a, b) => a + b, 0) || 1;
+  const allTotal = [...allCounts.values()].reduce((a, b) => a + b, 0) || 1;
+
+  // 반응 표현은 이미 '성격'과 '대표 반응'에서 보여주므로 키워드에서는 뺀다 (주제어를 남기려는 목적)
+  const isReaction = (word) => REACTION_KINDS.some(({ re }) => re.test(word));
+
+  const rank = (minCount) => [...inCounts.entries()]
+    .filter(([word, n]) => n >= minCount && !isReaction(word))
+    .map(([word, n]) => ({
+      word,
+      count: n,
+      // 전체에서보다 이 구간에서 얼마나 더 자주 나왔는지
+      lift: (n / inTotal) / ((allCounts.get(word) || n) / allTotal)
+    }))
+    .sort((a, b) => b.lift - a.lift || b.count - a.count)
+    .slice(0, limit)
+    .map((k) => k.word);
+
+  // 두 번 이상 나온 말을 우선하되, 짧은 구간이라 하나도 없으면 한 번 나온 말이라도 보여준다
+  const repeated = rank(2);
+  return repeated.length ? repeated : rank(1);
+}
+
+// 반응 표현을 세어 구간 성격을 정한다
+function characterize(rows) {
+  const counts = REACTION_KINDS.map(({ kind, re }) => ({ kind, n: rows.filter((r) => re.test(r.content)).length }))
+    .filter((c) => c.n > 0)
+    .sort((a, b) => b.n - a.n);
+  if (!counts.length) return '';
+  const top = counts[0];
+  // 압도적이지 않으면 두 가지를 같이 보여준다
+  return counts[1] && counts[1].n >= top.n * 0.6 ? `${top.kind}·${counts[1].kind}` : top.kind;
 }
 
 // 구간에서 무슨 일이 있었는지 보여줄 대표 반응.

@@ -462,6 +462,9 @@ function renderHome() {
     .hl-line time { color: #5f9c88; font-size: 11.5px; flex-shrink: 0; }
     .hl-line b { color: #cfe0d8; flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hl-line span { color: #a9b8b1; word-break: break-all; }
+    .hl-kind { display: inline-block; margin: 0 7px; padding: 1px 8px; border-radius: 999px; background: rgba(0,217,165,.12); color: #57e6c3; font-size: 11.5px; font-weight: 600; }
+    .hl-keywords { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+    .hl-keywords span { padding: 2px 8px; border-radius: 6px; background: #1a211e; color: #a9b8b1; font-size: 11.5px; }
     .sp-list { margin-top: 8px; }
     .sp-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; }
     .sp-rank { width: 18px; color: #6f7f77; font-size: 11.5px; flex-shrink: 0; text-align: right; }
@@ -682,7 +685,7 @@ function renderHome() {
             .map(function (p) { return '<div class="stat"><div class="stat-value">' + p[0] + '</div><div class="stat-label">' + p[1] + '</div></div>'; }).join('');
           var hl = result.highlights.length
             ? '<h3 class="hl-title">하이라이트 ' + result.highlights.length + '개 <span class="muted">— 누르면 그 구간 채팅을 봅니다</span></h3><ul style="margin-top:8px;">' + result.highlights.map(function (h, i) {
-                return '<li class="hl-open" data-start="' + h.startSec + '" data-end="' + h.endSec + '" style="align-items:flex-start;gap:12px;cursor:pointer;"><span class="hl-rank">' + (i + 1) + '</span><span style="min-width:0;"><span style="color:#cfe0d8;font-size:13px;">' + fmtDur(h.startSec) + ' ~ ' + fmtDur(h.endSec) + '</span> <span class="muted" style="font-size:12px;">' + h.durationSec + '초 · 분당 ' + h.baselinePerMin + '→' + h.peakPerMin + '개 · 채팅 ' + h.chats + '줄</span><br><span class="muted" style="font-size:12.5px;">' + h.topMessages.map(function (m) { return esc(m.content) + ' x' + m.count; }).join(' · ') + '</span><div class="hl-detail" hidden></div></span></li>';
+                return '<li class="hl-open" data-start="' + h.startSec + '" data-end="' + h.endSec + '" style="align-items:flex-start;gap:12px;cursor:pointer;"><span class="hl-rank">' + (i + 1) + '</span><span style="min-width:0;"><span style="color:#cfe0d8;font-size:13px;">' + fmtDur(h.startSec) + ' ~ ' + fmtDur(h.endSec) + '</span> <span class="muted" style="font-size:12px;">' + h.durationSec + '초 · 분당 ' + h.baselinePerMin + '→' + h.peakPerMin + '개 · 채팅 ' + h.chats + '줄</span>' + (h.kind ? '<span class="hl-kind">' + esc(h.kind) + '</span>' : '') + (h.keywords.length ? '<div class="hl-keywords">' + h.keywords.map(function (k) { return '<span>' + esc(k) + '</span>'; }).join('') + '</div>' : '') + '<br><span class="muted" style="font-size:12.5px;">' + h.topMessages.map(function (m) { return esc(m.content) + ' x' + m.count; }).join(' · ') + '</span><div class="hl-detail" hidden></div></span></li>';
               }).join('') + '</ul>'
             : '<p class="muted" style="margin-top:12px;">하이라이트로 볼 만한 구간이 없습니다.</p>';
           analyzed = result;

@@ -124,8 +124,10 @@ function renderAnalysisHighlights(list) {
         <span class="hl-rank">${i + 1}</span>
         <div class="hl-body">
           <div class="hl-time">${fmtDuration(h.startSec)} ~ ${fmtDuration(h.endSec)}
+            ${h.kind ? `<span class="hl-kind">${esc(h.kind)}</span>` : ''}
             <span class="muted">${h.durationSec}초 · 분당 ${h.baselinePerMin}→${h.peakPerMin}개 · 채팅 ${h.chats}줄</span>
           </div>
+          ${h.keywords.length ? `<div class="hl-keywords">${h.keywords.map((k) => `<span>${esc(k)}</span>`).join('')}</div>` : ''}
           <div class="hl-msg">${h.topMessages.map((m) => `${esc(m.content)} <span class="muted">x${m.count}</span>`).join(' · ')}</div>
           <div class="hl-detail" hidden></div>
         </div>

@@ -218,3 +218,11 @@ li.hl-open:hover .hl-time { color: #57e6c3; }
 .sp-bar { flex: 1; height: 6px; background: #1a211e; border-radius: 3px; overflow: hidden; min-width: 40px; }
 .sp-bar > span { display: block; height: 100%; background: #00d9a5; opacity: .7; }
 .sp-count { width: 88px; flex-shrink: 0; text-align: right; color: #a9b8b1; font-size: 12.5px; }
+
+/* 구간 성격 라벨과 키워드 */
+.hl-kind {
+  display: inline-block; margin: 0 7px; padding: 1px 8px; border-radius: 999px;
+  background: rgba(0,217,165,.12); color: #57e6c3; font-size: 11.5px; font-weight: 600;
+}
+.hl-keywords { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+.hl-keywords span { padding: 2px 8px; border-radius: 6px; background: #1a211e; color: #a9b8b1; font-size: 11.5px; }
