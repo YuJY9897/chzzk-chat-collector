@@ -183,7 +183,8 @@ async function analyzeLog(req, res) {
   const body = await readJson(req);
   const target = safeLogPath(body?.path);
   if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 분석할 수 있습니다.' });
-  sendJson(res, analyzeLogFile(target));
+  const threshold = Number(body?.threshold);
+  sendJson(res, analyzeLogFile(target, Number.isFinite(threshold) && threshold > 0 ? { threshold } : {}));
 }
 
 async function rangeChats(req, res) {
@@ -514,8 +515,15 @@ function renderHome() {
         <p class="muted">수집해 둔 로그를 골라 채팅이 몰린 구간을 찾습니다. 방송 중이 아니어도 언제든 볼 수 있습니다.</p>
         <div class="row" style="flex-wrap:nowrap;margin-top:12px;">
           <select id="log-select" style="flex:1;min-width:0;padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;"></select>
-          <button class="ghost" type="button" onclick="analyzeLog()">분석</button>
           <button class="ghost small" type="button" onclick="loadLogList()">↻</button>
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <select id="threshold-select" style="padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;">
+            <option value="2">민감하게 (많이 찾음)</option>
+            <option value="3" selected>보통</option>
+            <option value="5">엄격하게 (확실한 것만)</option>
+          </select>
+          <button class="primary" type="button" onclick="analyzeLog()">분석</button>
         </div>
         <div id="analyze-result"></div>
       </section>
@@ -581,6 +589,18 @@ function renderHome() {
       try { return new Date(iso).toLocaleTimeString('ko-KR', { hour12: false }); } catch (e) { return iso; }
     }
 
+    // 치지직 VOD URL에는 시간 파라미터가 없지만 다시보기 댓글의 시각은 눌러서 이동할 수 있다
+    function copyTimestamps() {
+      if (!analyzed) return;
+      var text = analyzed.highlights.map(function (h) {
+        return (fmtDur(h.startSec) + ' ' + h.topMessages.map(function (m) { return m.content; }).join(' ')).trim();
+      }).join(String.fromCharCode(10));
+      navigator.clipboard.writeText(text).then(function () {
+        var el = document.getElementById('copy-done');
+        if (el) { el.textContent = '복사했습니다'; setTimeout(function () { el.textContent = ''; }, 2000); }
+      });
+    }
+
     function toggleHighlightChats(item) {
       var box = item.querySelector('.hl-detail');
       if (!box.hidden) { box.hidden = true; return; }
@@ -630,6 +650,7 @@ function renderHome() {
     }
 
     var analyzedPath = '';
+    var analyzed = null;
 
     function analyzeLog() {
       var target = document.getElementById('log-select').value;
@@ -637,7 +658,7 @@ function renderHome() {
       analyzedPath = target;
       var box = document.getElementById('analyze-result');
       box.innerHTML = '<p class="muted" style="margin-top:12px;">분석 중...</p>';
-      fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: target }) })
+      fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: target, threshold: Number(document.getElementById('threshold-select').value) }) })
         .then(function (r) { return r.json(); })
         .then(function (result) {
           if (!result.ok) { box.innerHTML = '<p class="muted" style="margin-top:12px;">' + esc(result.error) + '</p>'; return; }
@@ -656,7 +677,9 @@ function renderHome() {
                 return '<li class="hl-open" data-start="' + h.startSec + '" data-end="' + h.endSec + '" style="align-items:flex-start;gap:12px;cursor:pointer;"><span class="hl-rank">' + (i + 1) + '</span><span style="min-width:0;"><span style="color:#cfe0d8;font-size:13px;">' + fmtDur(h.startSec) + ' ~ ' + fmtDur(h.endSec) + '</span> <span class="muted" style="font-size:12px;">' + h.durationSec + '초 · 분당 ' + h.baselinePerMin + '→' + h.peakPerMin + '개 · 채팅 ' + h.chats + '줄</span><br><span class="muted" style="font-size:12.5px;">' + h.topMessages.map(function (m) { return esc(m.content) + ' x' + m.count; }).join(' · ') + '</span><div class="hl-detail" hidden></div></span></li>';
               }).join('') + '</ul>'
             : '<p class="muted" style="margin-top:12px;">하이라이트로 볼 만한 구간이 없습니다.</p>';
-          box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl;
+          analyzed = result;
+          var copyBtn = result.highlights.length ? '<div class="row" style="margin-top:12px;"><button class="ghost small" type="button" onclick="copyTimestamps()">다시보기 댓글용 타임스탬프 복사</button><span class="muted" id="copy-done"></span></div>' : '';
+          box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl + copyBtn;
         });
     }
 

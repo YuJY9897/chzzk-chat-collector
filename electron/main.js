@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, dialog, ipcMain, shell, Notification } from 'electron';
+import { app, BrowserWindow, Tray, Menu, clipboard, dialog, ipcMain, shell, Notification } from 'electron';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -377,7 +377,9 @@ ipcMain.handle('collect:off', () => {
 
 ipcMain.handle('logs:list', (_event, dir) => listLogFiles(dir || path.resolve('./data')));
 
-ipcMain.handle('logs:analyze', (_event, csvPath) => analyzeLogFile(csvPath));
+ipcMain.handle('logs:analyze', (_event, csvPath, threshold) => analyzeLogFile(csvPath, threshold ? { threshold } : {}));
+
+ipcMain.handle('clipboard:write', (_event, text) => { clipboard.writeText(String(text ?? '')); return { ok: true }; });
 
 ipcMain.handle('logs:chats', (_event, csvPath, startSec, endSec) => chatsInRange(csvPath, startSec, endSec));
 

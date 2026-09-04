@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('api', {
   openPath: (dir) => ipcRenderer.invoke('shell:openPath', dir),
   revealFiles: () => ipcRenderer.invoke('shell:reveal'),
   listLogs: (dir) => ipcRenderer.invoke('logs:list', dir),
-  analyzeLog: (csvPath) => ipcRenderer.invoke('logs:analyze', csvPath),
+  analyzeLog: (csvPath, threshold) => ipcRenderer.invoke('logs:analyze', csvPath, threshold),
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   rangeChats: (csvPath, startSec, endSec) => ipcRenderer.invoke('logs:chats', csvPath, startSec, endSec)
 });

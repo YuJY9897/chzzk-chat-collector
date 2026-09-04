@@ -2,6 +2,7 @@ let state = null;
 let modalShownFor = '';
 let settingsReady = false;
 let analyzedPath = '';
+let analyzed = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -151,6 +152,14 @@ async function toggleHighlightChats(item) {
     .join('') + (result.total > result.rows.length ? `<div class="muted mt8">…외 ${result.total - result.rows.length}줄</div>` : '');
 }
 
+// 치지직은 VOD URL에 시간 파라미터가 없지만, 다시보기 댓글에 적은 시각은 눌러서 이동할 수 있다.
+// 그래서 댓글에 그대로 붙여넣을 수 있는 형태로 만든다.
+function timestampText(highlights) {
+  return highlights
+    .map((h) => `${fmtDuration(h.startSec)} ${h.topMessages.map((m) => m.content).join(' ')}`.trim())
+    .join(String.fromCharCode(10));
+}
+
 function renderAnalysis(result) {
   if (!result) return '';
   if (!result.ok) return `<p class="muted mt12">${esc(result.error)}</p>`;
@@ -162,7 +171,8 @@ function renderAnalysis(result) {
       <div class="stat"><div class="stat-value">${result.perMinute}</div><div class="stat-label">분당 평균</div></div>
     </div>
     ${renderSpark(result.timeline)}
-    ${renderAnalysisHighlights(result.highlights)}`;
+    ${renderAnalysisHighlights(result.highlights)}
+    ${result.highlights.length ? '<div class="row mt12"><button class="ghost small" id="copy-ts-btn" type="button">다시보기 댓글용 타임스탬프 복사</button><span class="muted" id="copy-done"></span></div>' : ''}`;
 }
 
 async function loadLogList() {
@@ -328,9 +338,16 @@ $('analyze-btn').addEventListener('click', async () => {
   if (!target) return;
   analyzedPath = target;
   $('analyze-result').innerHTML = '<p class="muted mt12">분석 중...</p>';
-  $('analyze-result').innerHTML = renderAnalysis(await window.api.analyzeLog(target));
+  analyzed = await window.api.analyzeLog(target, Number($('threshold-select').value));
+  $('analyze-result').innerHTML = renderAnalysis(analyzed);
 });
-$('analyze-result').addEventListener('click', (event) => {
+$('analyze-result').addEventListener('click', async (event) => {
+  if (event.target.id === 'copy-ts-btn') {
+    await window.api.copyText(timestampText(analyzed.highlights));
+    $('copy-done').textContent = '복사했습니다';
+    setTimeout(() => { const el = $('copy-done'); if (el) el.textContent = ''; }, 2000);
+    return;
+  }
   const item = event.target.closest('.hl-open');
   if (item) toggleHighlightChats(item);
 });
