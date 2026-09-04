@@ -1,8 +1,24 @@
 # CHZZK Chat Collector
 
+[![Node.js](https://img.shields.io/badge/Node.js-JavaScript-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+[![Electron](https://img.shields.io/badge/Electron-데스크톱%20앱-47848F?logo=electron&logoColor=white)](https://electronjs.org)
+[![CHZZK Open API](https://img.shields.io/badge/CHZZK-Open%20API%20(OAuth%202.0)-00FFA3)](https://developers.chzzk.naver.com)
+
+> **방송 하나가 몇 시간씩 가는데, 쇼츠나 롱폼으로 편집할 구간을 찾으려면 그 긴 영상을 다시 돌려봐야 합니다.**
+> 채팅이 몰리는 순간이 대체로 그 지점이라, 채팅을 시각과 함께 쌓아두면 편집점을 데이터로 찾을 수 있겠다고 봤습니다.
+> 이 수집기는 그 **첫 단계인 데이터 수집**을 맡는 도구입니다.
+
 치지직 공식 Open API의 Session API로 라이브 채팅 이벤트를 저장하는 수집기입니다.
 
 이 수집기는 비공식 크롤링, 쿠키 기반 수집, 다시보기 채팅 긁기를 하지 않습니다. 공식 API 권한을 받은 채널의 **라이브 중 발생하는 채팅**을 CSV/JSONL로 기록하는 용도입니다.
+
+## 직접 해결한 것
+
+- **장시간 방송에서 끊기지 않게** — OAuth 2.0 토큰 자동 갱신, 네트워크 단절 시 5초 간격 최대 5분 재연결, 재연결 구간을 JSONL 마커로 남겨 수집 공백을 확인할 수 있게 했습니다
+- **시청자 식별자를 원본으로 저장하지 않습니다** — SHA-256 해시(16자)로 바꿔 저장해, 같은 시청자 추적은 되지만 원본 ID는 파일에 남지 않습니다
+- **CSV 수식 주입을 막았습니다** — 채팅이 `=` `+` `-` `@`로 시작하면 앞에 `'`를 붙여 Excel에서 수식으로 실행되지 않게 처리했습니다
+- **개발 환경 없이도 쓸 수 있게** — Electron으로 exe 빌드, 트레이 상주 백그라운드 수집, 방송 종료 자동 감지 후 Windows 알림
+- **범위를 처음부터 제한했습니다** — 공식 API 권한을 허용한 채널의 라이브 채팅만 대상으로 하고, `clientSecret` 등 민감 정보는 `.env`로 분리해 저장소에 올리지 않습니다
 
 ## 준비
 
