@@ -430,6 +430,10 @@ function renderHome() {
     .fold[open] > summary { margin-bottom: 10px; }
     .fold-hint { margin-left: auto; color: #6f7f77; font-size: 12px; font-weight: 400; }
     .fold details { border: 0; padding: 0; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+    .tab { background: transparent; color: #7d8c85; border: 1px solid transparent; padding: 8px 16px; font-size: 13.5px; border-radius: 9px; }
+    .tab:hover { color: #cfe0d8; }
+    .tab.active { background: #1d2522; color: #eef4f1; border-color: #2c3733; }
     .stat-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
     .stat { min-width: 72px; }
     .stat-value { font-size: 17px; font-weight: 700; color: #cfe0d8; }
@@ -449,6 +453,12 @@ function renderHome() {
     </header>
     <p class="subtitle">치지직 공식 API로 내 방송 채팅을 자동 저장합니다</p>
 
+    <nav class="tabs">
+      <button class="tab active" id="tab-collect-btn" type="button" onclick="showTab('collect')">수집</button>
+      <button class="tab" id="tab-analyze-btn" type="button" onclick="showTab('analyze')">분석</button>
+    </nav>
+
+    <div id="tab-collect">
     <section class="card hero">
       <div class="hero-state">
         <span class="dot ${hero.dot}" id="hero-dot"></span>
@@ -472,19 +482,24 @@ function renderHome() {
 
     ${resultCard}
 
-    <details class="fold" id="fold-analyze" ontoggle="if (this.open) loadLogList()">
-      <summary>저장된 로그 분석 <span class="fold-hint" id="analyze-hint"></span></summary>
-      <div class="row" style="flex-wrap:nowrap;">
-        <select id="log-select" style="flex:1;min-width:0;padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;"></select>
-        <button class="ghost" type="button" onclick="analyzeLog()">분석</button>
-      </div>
-      <div id="analyze-result"></div>
-    </details>
-
     <details class="fold">
       <summary>실시간 채팅 <span class="fold-hint" id="chat-hint">${current.chatCount ? `${current.chatCount.toLocaleString('ko-KR')}줄` : ''}</span></summary>
       <ul id="chat-list">${chats || '<li><span class="muted">아직 수집된 채팅이 없습니다.</span></li>'}</ul>
     </details>
+    </div>
+
+    <div id="tab-analyze" hidden>
+      <section class="card">
+        <h2>저장된 로그 분석</h2>
+        <p class="muted">수집해 둔 로그를 골라 채팅이 몰린 구간을 찾습니다. 방송 중이 아니어도 언제든 볼 수 있습니다.</p>
+        <div class="row" style="flex-wrap:nowrap;margin-top:12px;">
+          <select id="log-select" style="flex:1;min-width:0;padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;"></select>
+          <button class="ghost" type="button" onclick="analyzeLog()">분석</button>
+          <button class="ghost small" type="button" onclick="loadLogList()">↻</button>
+        </div>
+        <div id="analyze-result"></div>
+      </section>
+    </div>
 
     <footer>
       <form method="post" action="/api/app/quit" onsubmit="return confirm('앱을 완전히 종료할까요? 수집 중이면 저장 후 종료됩니다.')">
@@ -546,6 +561,15 @@ function renderHome() {
       try { return new Date(iso).toLocaleTimeString('ko-KR', { hour12: false }); } catch (e) { return iso; }
     }
 
+    function showTab(name) {
+      var analyzing = name === 'analyze';
+      document.getElementById('tab-collect').hidden = analyzing;
+      document.getElementById('tab-analyze').hidden = !analyzing;
+      document.getElementById('tab-collect-btn').classList.toggle('active', !analyzing);
+      document.getElementById('tab-analyze-btn').classList.toggle('active', analyzing);
+      if (analyzing) loadLogList();
+    }
+
     function fmtBytes(n) {
       return n < 1024 ? n + 'B' : n < 1048576 ? (n / 1024).toFixed(1) + 'KB' : (n / 1048576).toFixed(1) + 'MB';
     }
@@ -562,7 +586,6 @@ function renderHome() {
         sel.innerHTML = logs.length
           ? logs.map(function (f) { return '<option value="' + esc(f.path) + '">' + esc(f.name) + ' · ' + fmtBytes(f.size) + '</option>'; }).join('')
           : '<option value="">저장된 로그가 없습니다</option>';
-        document.getElementById('analyze-hint').textContent = logs.length ? logs.length + '개' : '';
       });
     }
 

@@ -133,8 +133,16 @@ async function loadLogList() {
   select.innerHTML = logs.length
     ? logs.map((f) => `<option value="${esc(f.path)}">${esc(f.name)} · ${fmtBytes(f.size)}</option>`).join('')
     : '<option value="">저장된 로그가 없습니다</option>';
-  $('analyze-hint').textContent = logs.length ? `${logs.length}개` : '';
   $('analyze-btn').disabled = !logs.length;
+}
+
+function showTab(name) {
+  const analyzing = name === 'analyze';
+  $('tab-collect').hidden = analyzing;
+  $('tab-analyze').hidden = !analyzing;
+  $('tab-collect-btn').classList.toggle('active', !analyzing);
+  $('tab-analyze-btn').classList.toggle('active', analyzing);
+  if (analyzing) loadLogList();
 }
 
 function render(next) {
@@ -283,7 +291,9 @@ $('analyze-btn').addEventListener('click', async () => {
   $('analyze-result').innerHTML = '<p class="muted mt12">분석 중...</p>';
   $('analyze-result').innerHTML = renderAnalysis(await window.api.analyzeLog(target));
 });
-$('fold-analyze').addEventListener('toggle', () => { if ($('fold-analyze').open) loadLogList(); });
+$('log-refresh-btn').addEventListener('click', loadLogList);
+$('tab-collect-btn').addEventListener('click', () => showTab('collect'));
+$('tab-analyze-btn').addEventListener('click', () => showTab('analyze'));
 
 $('reveal-btn').addEventListener('click', () => window.api.revealFiles());
 $('modal-reveal').addEventListener('click', () => window.api.revealFiles());
