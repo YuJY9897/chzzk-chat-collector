@@ -427,7 +427,7 @@ if (!gotLock) {
       setTimeout(async () => {
         try {
           const probe = await win.webContents.executeJavaScript(
-            "JSON.stringify({ statusText: document.getElementById('status-text').textContent, modeText: document.getElementById('mode-text').textContent, hasOnBtn: !!document.getElementById('on-btn'), connectArea: document.getElementById('connect-area').textContent.slice(0, 40) })"
+            "JSON.stringify({ heroTitle: document.getElementById('hero-title').textContent, heroSub: document.getElementById('hero-sub').textContent, modeText: document.getElementById('mode-text').textContent, hasOnBtn: !!document.getElementById('on-btn'), folds: document.querySelectorAll('details.fold').length, connectHint: document.getElementById('connect-hint').textContent })"
           );
           console.log('SMOKE probe', probe);
         } catch (error) {
