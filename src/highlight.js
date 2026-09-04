@@ -169,6 +169,7 @@ export function analyzeLogFile(csvPath, options = {}) {
       speakers: speakers.size,
       perMinute: durationSec > 0 ? Number((rows.length / (durationSec / 60)).toFixed(1)) : rows.length,
       timeline: timeline(rows, durationSec),
+      speakerStats: speakerStats(rows),
       highlights: detectHighlights(rows, { topN: 10, ...options })
     };
   } catch (error) {
@@ -187,6 +188,43 @@ export function chatsInRange(csvPath, startSec, endSec, limit = 200) {
   } catch (error) {
     return { ok: false, error: error.message };
   }
+}
+
+// 누가 채팅을 주도했는지. 한두 명이 도배한 로그인지 여러 명이 고루 참여했는지 구분한다.
+function speakerStats(rows, limit = 10) {
+  const bySender = new Map();
+  for (const row of rows) {
+    const found = bySender.get(row.sender);
+    if (found) {
+      found.count += 1;
+      found.nickname = row.nickname || found.nickname; // 닉네임이 바뀌면 최신 것으로
+      if (row.sec > found.lastSec) found.lastSec = row.sec;
+    } else {
+      bySender.set(row.sender, { nickname: row.nickname, role: row.role, count: 1, firstSec: row.sec, lastSec: row.sec });
+    }
+  }
+
+  const all = [...bySender.values()].sort((a, b) => b.count - a.count);
+  const total = rows.length;
+  const topCount = Math.max(1, Math.floor(all.length * 0.1));
+  const roles = {};
+  for (const s of all) roles[s.role || 'unknown'] = (roles[s.role || 'unknown'] || 0) + 1;
+
+  return {
+    total: all.length,
+    // 상위 10%가 전체 채팅의 몇 %를 차지하는지 (쏠림 정도)
+    concentration: Math.round((all.slice(0, topCount).reduce((sum, s) => sum + s.count, 0) / total) * 100),
+    onceOnly: all.filter((s) => s.count === 1).length,
+    roles,
+    top: all.slice(0, limit).map((s) => ({
+      nickname: s.nickname,
+      role: s.role,
+      count: s.count,
+      share: Math.round((s.count / total) * 100),
+      firstSec: s.firstSec,
+      lastSec: s.lastSec
+    }))
+  };
 }
 
 // 시간대별 채팅량 (그래프용). 구간 수를 고정해 어떤 길이든 같은 폭으로 그린다.
@@ -215,6 +253,7 @@ export function loadRowsFromCsv(file) {
       sec: elapsed === '' ? Math.floor((time - firstTime) / 1000) : Number(elapsed),
       sender: cols[idx('sender_channel_id')],
       nickname: cols[idx('nickname')],
+      role: idx('user_role') >= 0 ? cols[idx('user_role')] : '',
       content: cols[idx('content')]
     });
   }

@@ -462,6 +462,14 @@ function renderHome() {
     .hl-line time { color: #5f9c88; font-size: 11.5px; flex-shrink: 0; }
     .hl-line b { color: #cfe0d8; flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .hl-line span { color: #a9b8b1; word-break: break-all; }
+    .sp-list { margin-top: 8px; }
+    .sp-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; }
+    .sp-rank { width: 18px; color: #6f7f77; font-size: 11.5px; flex-shrink: 0; text-align: right; }
+    .sp-name { width: 130px; flex-shrink: 0; color: #cfe0d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sp-role { color: #57e6c3; font-size: 11px; margin-left: 5px; }
+    .sp-bar { flex: 1; height: 6px; background: #1a211e; border-radius: 3px; overflow: hidden; min-width: 40px; }
+    .sp-bar > span { display: block; height: 100%; background: #00d9a5; opacity: .7; }
+    .sp-count { width: 88px; flex-shrink: 0; text-align: right; color: #a9b8b1; font-size: 12.5px; }
     .hl-title { font-size: 13px; color: #c9d6d0; margin: 16px 0 0; }
     .hl-rank { width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0; background: rgba(0,217,165,.12); color: #57e6c3; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
   </style>
@@ -679,7 +687,19 @@ function renderHome() {
             : '<p class="muted" style="margin-top:12px;">하이라이트로 볼 만한 구간이 없습니다.</p>';
           analyzed = result;
           var copyBtn = result.highlights.length ? '<div class="row" style="margin-top:12px;"><button class="ghost small" type="button" onclick="copyTimestamps()">다시보기 댓글용 타임스탬프 복사</button><span class="muted" id="copy-done"></span></div>' : '';
-          box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl + copyBtn;
+          var ROLE_LABEL = { streamer: '스트리머', manager: '매니저', common_user: '' };
+          var st = result.speakerStats;
+          var sp = '';
+          if (st && st.top.length) {
+            sp = '<h3 class="hl-title">발화자 ' + st.total.toLocaleString('ko-KR') + '명 <span class="muted">— 상위 10%가 전체의 ' + st.concentration + '%, 1줄만 친 사람 ' + st.onceOnly + '명</span></h3><div class="sp-list">'
+              + st.top.map(function (s, i) {
+                  return '<div class="sp-row"><span class="sp-rank">' + (i + 1) + '</span>'
+                    + '<span class="sp-name">' + esc(s.nickname) + (ROLE_LABEL[s.role] ? '<span class="sp-role">' + ROLE_LABEL[s.role] + '</span>' : '') + '</span>'
+                    + '<span class="sp-bar"><span style="width:' + Math.max(2, s.share) + '%"></span></span>'
+                    + '<span class="sp-count">' + s.count.toLocaleString('ko-KR') + '줄 <span class="muted">' + s.share + '%</span></span></div>';
+                }).join('') + '</div>';
+          }
+          box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl + sp + copyBtn;
         });
     }
 

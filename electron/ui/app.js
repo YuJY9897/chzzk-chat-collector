@@ -160,6 +160,26 @@ function timestampText(highlights) {
     .join(String.fromCharCode(10));
 }
 
+const ROLE_LABEL = { streamer: '스트리머', manager: '매니저', common_user: '' };
+
+function renderSpeakers(stats) {
+  if (!stats || !stats.top.length) return '';
+  const rows = stats.top
+    .map((s, i) => `
+      <div class="sp-row">
+        <span class="sp-rank">${i + 1}</span>
+        <span class="sp-name">${esc(s.nickname)}${ROLE_LABEL[s.role] ? `<span class="sp-role">${ROLE_LABEL[s.role]}</span>` : ''}</span>
+        <span class="sp-bar"><span style="width:${Math.max(2, s.share)}%"></span></span>
+        <span class="sp-count">${s.count.toLocaleString('ko-KR')}줄 <span class="muted">${s.share}%</span></span>
+      </div>`)
+    .join('');
+  return `
+    <h3 class="hl-title">발화자 ${stats.total.toLocaleString('ko-KR')}명
+      <span class="muted">— 상위 10%가 전체의 ${stats.concentration}%, 1줄만 친 사람 ${stats.onceOnly}명</span>
+    </h3>
+    <div class="sp-list">${rows}</div>`;
+}
+
 function renderAnalysis(result) {
   if (!result) return '';
   if (!result.ok) return `<p class="muted mt12">${esc(result.error)}</p>`;
@@ -172,6 +192,7 @@ function renderAnalysis(result) {
     </div>
     ${renderSpark(result.timeline)}
     ${renderAnalysisHighlights(result.highlights)}
+    ${renderSpeakers(result.speakerStats)}
     ${result.highlights.length ? '<div class="row mt12"><button class="ghost small" id="copy-ts-btn" type="button">다시보기 댓글용 타임스탬프 복사</button><span class="muted" id="copy-done"></span></div>' : ''}`;
 }
 
