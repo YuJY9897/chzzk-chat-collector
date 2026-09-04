@@ -106,18 +106,27 @@ export function detectHighlights(rows, options = {}) {
     .slice(0, topN);
 }
 
-// 구간에서 가장 많이 반복된 반응 (무슨 일이 있었는지 요약용)
+// 구간에서 무슨 일이 있었는지 보여줄 대표 반응.
+// 'ㅋㅋㅋ'와 'ㅋㅋㅋㅋㅋㅋ'는 같은 반응이므로 반복 문자를 3개로 줄여 묶는다.
+// 실제 방송에서는 똑같은 문장이 반복되는 경우가 드물어, 횟수가 같으면 긴 쪽을 우선한다.
 function topMessages(rows, limit = 3) {
-  const counter = new Map();
+  const groups = new Map();
   for (const row of rows) {
-    const key = row.content.replace(/\s+/g, ' ').trim();
-    if (!key) continue;
-    counter.set(key, (counter.get(key) || 0) + 1);
+    const text = row.content.replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const key = text.replace(/(.)\1{2,}/g, '$1$1$1');
+    const found = groups.get(key);
+    if (found) {
+      found.count += 1;
+      // 같은 반응 중에서는 가장 짧은 표기를 대표로 (ㅋㅋㅋㅋㅋㅋ 대신 ㅋㅋㅋ)
+      if (text.length < found.content.length) found.content = text;
+    } else {
+      groups.set(key, { content: text, count: 1 });
+    }
   }
-  return [...counter.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([content, count]) => ({ content, count }));
+  return [...groups.values()]
+    .sort((a, b) => b.count - a.count || b.content.length - a.content.length)
+    .slice(0, limit);
 }
 
 function median(list) {

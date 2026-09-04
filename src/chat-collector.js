@@ -57,7 +57,9 @@ export class ChatCollector {
     this.paused = false;
     this.subscribed = false;
     this.endReason = null;
-    this.startedAt = parseStartedAt(broadcastStartedAt);
+    // 방송 시작 시각을 알 방법이 없으므로, 직접 입력하지 않았으면 수집을 켠 시각을 기준으로 삼는다.
+    // (방송 전에 미리 켜두면 그만큼 앞으로 밀리지만, 비워두는 것보다 분석에 쓸모가 있다)
+    this.startedAt = parseStartedAt(broadcastStartedAt) || new Date();
     this.chatCount = 0;
     this.waitingSince = null;
     this.lastChatAt = null;
