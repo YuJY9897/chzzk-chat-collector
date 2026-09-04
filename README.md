@@ -152,6 +152,14 @@ received_at,message_time,elapsed_seconds,channel_id,chat_channel_id,sender_chann
 node tools/detect-highlights.mjs data/파일이름.csv
 ```
 
+방송 없이 수집 한 판을 통째로 돌려보는 시뮬레이터 (소켓만 가짜, 나머지는 실제 코드):
+
+```bash
+node tools/simulate-collection.mjs
+```
+
+파일 생성 → 채팅 기록 → 일시정지/재개 마커 → 종료 → 하이라이트 분석까지 확인하고, 채팅 0줄일 때 빈 파일이 지워지는지, 시작 실패 시 뒷정리가 되는지도 검사합니다.
+
 분석/개발용 더미 로그 생성 (동시시청자 300명, 3시간):
 
 ```bash
