@@ -169,7 +169,7 @@ function renderSpeakers(stats) {
       <div class="sp-row">
         <span class="sp-rank">${i + 1}</span>
         <span class="sp-name">${esc(s.nickname)}${ROLE_LABEL[s.role] ? `<span class="sp-role">${ROLE_LABEL[s.role]}</span>` : ''}</span>
-        <span class="sp-bar"><span style="width:${Math.max(2, s.share)}%"></span></span>
+        <span class="sp-bar"><span data-share="${Math.max(2, s.barPct)}"></span></span>
         <span class="sp-count">${s.count.toLocaleString('ko-KR')}줄 <span class="muted">${s.share}%</span></span>
       </div>`)
     .join('');
@@ -194,6 +194,13 @@ function renderAnalysis(result) {
     ${renderAnalysisHighlights(result.highlights)}
     ${renderSpeakers(result.speakerStats)}
     ${result.highlights.length ? '<div class="row mt12"><button class="ghost small" id="copy-ts-btn" type="button">다시보기 댓글용 타임스탬프 복사</button><span class="muted" id="copy-done"></span></div>' : ''}`;
+}
+
+// CSP가 style 속성을 막아서 막대 폭은 DOM에 넣은 뒤 CSSOM으로 지정한다
+function applyBarWidths() {
+  for (const bar of document.querySelectorAll('.sp-bar > span[data-share]')) {
+    bar.style.width = `${bar.dataset.share}%`;
+  }
 }
 
 async function loadLogList() {
@@ -361,6 +368,7 @@ $('analyze-btn').addEventListener('click', async () => {
   $('analyze-result').innerHTML = '<p class="muted mt12">분석 중...</p>';
   analyzed = await window.api.analyzeLog(target, Number($('threshold-select').value));
   $('analyze-result').innerHTML = renderAnalysis(analyzed);
+  applyBarWidths();
 });
 $('analyze-result').addEventListener('click', async (event) => {
   if (event.target.id === 'copy-ts-btn') {

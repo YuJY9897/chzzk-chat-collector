@@ -221,6 +221,8 @@ function speakerStats(rows, limit = 10) {
       role: s.role,
       count: s.count,
       share: Math.round((s.count / total) * 100),
+      // 막대는 총합이 아니라 1위 대비로 그린다. 발화자가 많으면 총합 대비는 전부 1~2%라 구분이 안 된다
+      barPct: Math.round((s.count / all[0].count) * 100),
       firstSec: s.firstSec,
       lastSec: s.lastSec
     }))

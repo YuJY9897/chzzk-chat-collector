@@ -695,7 +695,7 @@ function renderHome() {
               + st.top.map(function (s, i) {
                   return '<div class="sp-row"><span class="sp-rank">' + (i + 1) + '</span>'
                     + '<span class="sp-name">' + esc(s.nickname) + (ROLE_LABEL[s.role] ? '<span class="sp-role">' + ROLE_LABEL[s.role] + '</span>' : '') + '</span>'
-                    + '<span class="sp-bar"><span style="width:' + Math.max(2, s.share) + '%"></span></span>'
+                    + '<span class="sp-bar"><span style="width:' + Math.max(2, s.barPct) + '%"></span></span>'
                     + '<span class="sp-count">' + s.count.toLocaleString('ko-KR') + '줄 <span class="muted">' + s.share + '%</span></span></div>';
                 }).join('') + '</div>';
           }
