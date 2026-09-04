@@ -447,11 +447,8 @@ function renderHome() {
     ${resultCard}
 
     <details class="fold">
-      <summary>실시간 채팅 <span class="fold-hint">${current.chatCount ? `${current.chatCount.toLocaleString('ko-KR')}줄` : ''}</span></summary>
-      <div class="row" style="margin-bottom: 10px;">
-        <button class="ghost small" type="button" onclick="location.reload()">↻ 새로고침</button>
-      </div>
-      <ul>${chats || '<li><span class="muted">아직 수집된 채팅이 없습니다.</span></li>'}</ul>
+      <summary>실시간 채팅 <span class="fold-hint" id="chat-hint">${current.chatCount ? `${current.chatCount.toLocaleString('ko-KR')}줄` : ''}</span></summary>
+      <ul id="chat-list">${chats || '<li><span class="muted">아직 수집된 채팅이 없습니다.</span></li>'}</ul>
     </details>
 
     <footer>
@@ -504,6 +501,16 @@ function renderHome() {
       });
     }
 
+    function esc(v) {
+      var d = document.createElement('div');
+      d.textContent = String(v == null ? '' : v);
+      return d.innerHTML;
+    }
+
+    function fmtClock(iso) {
+      try { return new Date(iso).toLocaleTimeString('ko-KR', { hour12: false }); } catch (e) { return iso; }
+    }
+
     function heroState(s) {
       if (!s.connected) return { dot: 'gray', title: '치지직 계정 연결이 필요합니다', sub: '아래 “치지직 연결”을 열어 연결해 주세요.' };
       if (s.mode === 'idle') return { dot: 'gray', title: '대기 중', sub: '수집을 켜두면 방송이 시작될 때 채팅이 저장됩니다.' };
@@ -530,6 +537,16 @@ function renderHome() {
         document.getElementById('hero-dot').className = 'dot ' + hero.dot;
         document.getElementById('hero-title').textContent = hero.title;
         document.getElementById('hero-sub').textContent = hero.sub;
+
+        document.getElementById('chat-hint').textContent = s.chatCount ? s.chatCount.toLocaleString('ko-KR') + '줄' : '';
+        var list = document.getElementById('chat-list');
+        if (list) {
+          list.innerHTML = s.recentChats.length
+            ? s.recentChats.map(function (c) {
+                return '<li><time>' + fmtClock(c.time) + '</time><b>' + esc(c.nickname) + '</b><span>' + esc(c.content) + '</span></li>';
+              }).join('')
+            : '<li><span class="muted">아직 수집된 채팅이 없습니다.</span></li>';
+        }
 
         if (s.completion && s.completion.finishedAt !== lastCompletion) {
           lastCompletion = s.completion.finishedAt;

@@ -14,7 +14,10 @@
     "auth:refresh": "node src/refresh.js",
     "auth:me": "node src/me.js",
     "collect": "node src/collector.js",
-    "server": "node src/server.js"
+    "server": "node src/server.js",
+    "simulate": "node tools/simulate-collection.mjs",
+    "dummy": "node tools/make-dummy-log.mjs",
+    "highlights": "node tools/detect-highlights.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.7",
@@ -37,7 +40,9 @@
       "package.json"
     ],
     "win": {
-      "target": ["portable"],
+      "target": [
+        "portable"
+      ],
       "icon": "electron/assets/icon.ico"
     },
     "portable": {
