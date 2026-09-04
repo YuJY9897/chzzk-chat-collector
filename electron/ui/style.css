@@ -141,3 +141,34 @@ li.hl { align-items: center; gap: 12px; }
 .hl-time { color: #cfe0d8; font-size: 13px; font-variant-numeric: tabular-nums; }
 .hl-time .muted { margin-left: 6px; font-size: 12px; }
 .hl-msg { color: #a9b8b1; font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 메인 상태 카드 */
+.hero { padding: 24px 22px; }
+.hero-state { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+.hero-state .dot { width: 11px; height: 11px; flex-shrink: 0; }
+.hero-title { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+.hero-sub { color: #7d8c85; font-size: 13px; margin-top: 2px; }
+.hero .warning { margin: 12px 0 0; }
+.hero .muted { margin: 12px 0 0; }
+
+/* 접이식 섹션 */
+.fold {
+  background: rgba(18, 23, 21, .85);
+  border: 1px solid #232b28;
+  border-radius: 14px;
+  padding: 14px 22px;
+  margin-bottom: 10px;
+}
+.fold > summary {
+  cursor: pointer; list-style: none;
+  font-size: 13.5px; font-weight: 600; color: #c9d6d0;
+  display: flex; align-items: center; gap: 8px;
+}
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before {
+  content: '▸'; color: #566159; font-size: 11px; transition: transform .15s;
+}
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold[open] > summary { margin-bottom: 10px; }
+.fold-hint { margin-left: auto; color: #6f7f77; font-size: 12px; font-weight: 400; }
+.fold details { border: 0; padding: 0; }

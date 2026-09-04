@@ -236,6 +236,7 @@ function getStatus() {
   return {
     connected: hasTokens(),
     connectedAt: connectedAt(),
+    chatCount: collector?.chatCount ?? 0,
     mode: getMode(),
     subscribed: Boolean(collector?.subscribed),
     status,
@@ -285,30 +286,31 @@ function renderHome() {
       </div>
       <p class="muted">치지직 로그인 화면으로 이동해 권한에 동의하면 자동으로 돌아옵니다. 처음 한 번만 하면 됩니다.</p>`;
 
+  const hero = heroState(current);
+
+  // 저장 설정은 접이식으로 내리고, 메인에는 버튼만 남긴다
+  const settingsSection = `
+      <label>저장할 파일 이름</label>
+      <input form="collect-form" name="logFileName" value="${defaultFileName}" ${mode === 'idle' ? '' : 'disabled'}>
+      <label>저장 위치</label>
+      <div class="row" style="flex-wrap: nowrap;">
+        <input id="outputDir" form="collect-form" name="outputDir" value="${escapeHtml(defaultOutputDir)}" readonly style="flex: 1; margin-bottom: 0;">
+        <button class="ghost" type="button" onclick="pickFolder(this)" ${mode === 'idle' ? '' : 'disabled'}>폴더 선택</button>
+        <button class="ghost" type="button" onclick="openPickedPath()">열기</button>
+      </div>
+      <details>
+        <summary>다시보기 기준 시작 시간 (선택)</summary>
+        <input form="collect-form" name="logStartDateTime" type="datetime-local" ${mode === 'idle' ? '' : 'disabled'}>
+        <p class="muted">방송 시작 시각을 넣으면 각 채팅이 방송 몇 분 몇 초에 나왔는지도 함께 저장됩니다.</p>
+      </details>`;
+
   let controls = '';
   if (mode === 'idle') {
     controls = `
-      <form method="post" action="/api/collect/on">
-        <label>저장할 파일 이름</label>
-        <input name="logFileName" value="${defaultFileName}">
-        <label>저장 위치</label>
-        <div class="row" style="flex-wrap: nowrap;">
-          <input id="outputDir" name="outputDir" value="${escapeHtml(defaultOutputDir)}" readonly style="flex: 1; margin-bottom: 0;">
-          <button class="ghost" type="button" onclick="pickFolder(this)">폴더 선택</button>
-          <button class="ghost" type="button" onclick="openPickedPath()">열기</button>
-        </div>
-        <p class="muted" style="margin-top: 6px;">폴더 선택을 누르면 선택 창이 열립니다. 열기를 누르면 지정한 폴더를 탐색기로 보여줍니다.</p>
-        <details>
-          <summary>고급 설정</summary>
-          <label>다시보기 기준 시작 시간 (선택)</label>
-          <input name="logStartDateTime" type="datetime-local">
-          <p class="muted">방송 시작 시각을 넣으면 각 채팅이 방송 몇 분 몇 초에 나왔는지(예: 00:15:30)도 함께 저장됩니다. 비워둬도 됩니다.</p>
-        </details>
-        <div class="row" style="margin-top: 16px;">
-          <button class="primary big" type="submit" ${current.connected ? '' : 'disabled'}>로그 수집 ON</button>
-        </div>
+      <form method="post" action="/api/collect/on" id="collect-form">
+        <button class="primary big" type="submit" ${current.connected ? '' : 'disabled'}>로그 수집 ON</button>
       </form>
-      <p class="muted">방송 전에 켜두면 방송이 시작될 때 자동으로 수집을 시작합니다. 이미 방송 중이면 바로 시작합니다.</p>`;
+      <p class="warning" style="margin-top:12px;">지나간 채팅은 저장할 수 없어요. 방송 시작 전에 미리 켜두세요.</p>`;
   } else {
     const pauseOrResume = mode === 'paused'
       ? '<form method="post" action="/api/collect/resume"><button class="primary" type="submit">▶ 재개</button></form>'
@@ -316,18 +318,14 @@ function renderHome() {
     controls = `
       <div class="row">
         ${pauseOrResume}
-        <form method="post" action="/api/collect/off"><button class="danger" type="submit">■ 종료</button></form>
+        <form method="post" action="/api/collect/off"><button class="danger" type="submit">■ 수집 종료</button></form>
       </div>
-      <p class="muted">일시정지 후 재개하면 같은 파일에 이어서 저장됩니다. 종료하면 파일이 완성됩니다.</p>
-      ${current.lastFiles ? `<div class="filebox"><div class="filebox-title">저장 중인 파일</div><code>${escapeHtml(path.resolve(current.lastFiles.csvPath))}</code></div>` : ''}
-      <p class="muted" id="last-received">${current.lastReceivedAt
-        ? `마지막 채팅 수신: ${fmtTime(current.lastReceivedAt)}`
-        : '아직 저장된 채팅이 없습니다. 방송 전이라면 방송이 켜질 때까지 자동으로 기다립니다.'}</p>`;
+      <p class="muted" style="margin-top:12px;">방송이 끝나면 종료를 눌러주세요. 치지직 API로는 방송 종료를 알 수 없어 자동으로 멈추지 않습니다.</p>`;
   }
 
   const resultCard = completion
-    ? `<section class="card">
-        <h2>마지막 수집 결과</h2>
+    ? `<details class="fold">
+        <summary>마지막 수집 결과 <span class="fold-hint">하이라이트 ${(completion.highlights || []).length}개</span></summary>
         <p class="muted">${escapeHtml(REASON_TEXT[completion.reason] || completion.reason)} · ${fmtTime(completion.finishedAt)}</p>
         <div class="filebox">
           <div class="filebox-title">CSV</div><code>${escapeHtml(completion.csvPath)}</code>
@@ -337,7 +335,7 @@ function renderHome() {
         <div class="row" style="margin-top:12px;">
           <button class="ghost" type="button" onclick="openFolder()">저장 폴더 열기</button>
         </div>
-      </section>`
+      </details>`
     : '';
 
   const chats = current.recentChats
@@ -371,7 +369,6 @@ function renderHome() {
     .dot.yellow { background: #f6d36d; }
     .dot.pulse { background: #00d9a5; animation: pulse 1.6s ease-in-out infinite; }
     @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(0,217,165,.5); } 50% { box-shadow: 0 0 0 6px rgba(0,217,165,0); } }
-    #status-pill { margin-top: 12px; font-size: 13.5px; color: #93a29b; }
     a.button, button { border: 0; border-radius: 9px; padding: 11px 18px; font-weight: 600; font-size: 14px; text-decoration: none; cursor: pointer; font-family: inherit; transition: filter .15s, background .15s; }
     .primary { background: #00d9a5; color: #06231b; }
     .primary:hover:not(:disabled) { filter: brightness(1.1); }
@@ -403,6 +400,19 @@ function renderHome() {
     .modal { background: #121715; border: 1px solid #2c3733; border-radius: 16px; padding: 28px; max-width: 480px; width: calc(100% - 40px); box-shadow: 0 24px 60px rgba(0,0,0,.5); }
     .modal h3 { margin: 0 0 8px; font-size: 17px; }
     .hidden { display: none; }
+    .hero { padding: 24px 24px; }
+    .hero-state { display: flex; align-items: center; gap: 13px; margin-bottom: 18px; }
+    .hero-state .dot { width: 11px; height: 11px; flex-shrink: 0; }
+    .hero-title { font-size: 17px; font-weight: 700; letter-spacing: -.3px; }
+    .hero-sub { color: #7d8c85; font-size: 13px; margin-top: 2px; }
+    .fold { background: #121715; border: 1px solid #232b28; border-radius: 14px; padding: 14px 24px; margin-bottom: 10px; }
+    .fold > summary { cursor: pointer; list-style: none; font-size: 13.5px; font-weight: 600; color: #c9d6d0; display: flex; align-items: center; gap: 8px; }
+    .fold > summary::-webkit-details-marker { display: none; }
+    .fold > summary::before { content: '▸'; color: #566159; font-size: 11px; transition: transform .15s; }
+    .fold[open] > summary::before { transform: rotate(90deg); }
+    .fold[open] > summary { margin-bottom: 10px; }
+    .fold-hint { margin-left: auto; color: #6f7f77; font-size: 12px; font-weight: 400; }
+    .fold details { border: 0; padding: 0; }
   </style>
 </head>
 <body>
@@ -413,35 +423,36 @@ function renderHome() {
     </header>
     <p class="subtitle">치지직 공식 API로 내 방송 채팅을 자동 저장합니다</p>
 
-    <section class="card">
-      <div class="row">
-        ${modeBadge}
-        ${accountBadge}
+    <section class="card hero">
+      <div class="hero-state">
+        <span class="dot ${hero.dot}" id="hero-dot"></span>
+        <div>
+          <div class="hero-title" id="hero-title">${escapeHtml(hero.title)}</div>
+          <div class="hero-sub" id="hero-sub">${escapeHtml(hero.sub)}</div>
+        </div>
       </div>
-      <div id="status-pill">${escapeHtml(current.status)}</div>
-    </section>
-
-    <section class="card">
-      <h2>1. 치지직 연결</h2>
-      ${connectSection}
-    </section>
-
-    <section class="card">
-      <h2>2. 로그 수집</h2>
-      <p class="warning">지나간 채팅은 저장할 수 없어요. 방송 시작 전에 미리 켜두세요.</p>
       ${controls}
     </section>
 
+    <details class="fold" ${current.connected ? '' : 'open'}>
+      <summary>치지직 연결 <span class="fold-hint">${current.connected ? '연결됨' : '연결 필요'}</span></summary>
+      ${connectSection}
+    </details>
+
+    <details class="fold">
+      <summary>저장 설정 <span class="fold-hint">${mode === 'idle' ? '' : '수집 중에는 변경할 수 없습니다'}</span></summary>
+      ${settingsSection}
+    </details>
+
     ${resultCard}
 
-    <section class="card">
-      <h2>최근 채팅</h2>
+    <details class="fold">
+      <summary>실시간 채팅 <span class="fold-hint">${current.chatCount ? `${current.chatCount.toLocaleString('ko-KR')}줄` : ''}</span></summary>
       <div class="row" style="margin-bottom: 10px;">
         <button class="ghost small" type="button" onclick="location.reload()">↻ 새로고침</button>
-        <span class="muted">원할 때 눌러서 수집 상태를 확인하세요.</span>
       </div>
       <ul>${chats || '<li><span class="muted">아직 수집된 채팅이 없습니다.</span></li>'}</ul>
-    </section>
+    </details>
 
     <footer>
       <form method="post" action="/api/app/quit" onsubmit="return confirm('앱을 완전히 종료할까요? 수집 중이면 저장 후 종료됩니다.')">
@@ -493,6 +504,19 @@ function renderHome() {
       });
     }
 
+    function heroState(s) {
+      if (!s.connected) return { dot: 'gray', title: '치지직 계정 연결이 필요합니다', sub: '아래 “치지직 연결”을 열어 연결해 주세요.' };
+      if (s.mode === 'idle') return { dot: 'gray', title: '대기 중', sub: '수집을 켜두면 방송이 시작될 때 채팅이 저장됩니다.' };
+      var saved = s.chatCount.toLocaleString('ko-KR') + '줄 저장됨';
+      if (s.mode === 'paused') return { dot: 'yellow', title: '일시정지', sub: saved + ' · 재개하면 같은 파일에 이어서 저장합니다.' };
+      if (!s.lastReceivedAt) return { dot: 'pulse', title: '수집 중 — 채팅 대기', sub: '방송이 시작되면 채팅이 저장됩니다.' };
+      var quiet = Math.floor((Date.now() - new Date(s.lastReceivedAt).getTime()) / 1000);
+      var tail = saved + ' · 마지막 수신 ' + timeAgo(s.lastReceivedAt);
+      return quiet < 120
+        ? { dot: 'pulse', title: '방송 채팅 수신 중', sub: tail }
+        : { dot: 'pulse', title: '수집 중 — 채팅 없음', sub: tail };
+    }
+
     function timeAgo(iso) {
       var sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
       if (sec < 60) return sec + '초 전';
@@ -502,11 +526,10 @@ function renderHome() {
 
     function poll() {
       fetch('/api/status').then(function (r) { return r.json(); }).then(function (s) {
-        var pill = document.getElementById('status-pill');
-        if (pill) pill.textContent = s.status;
-
-        var lr = document.getElementById('last-received');
-        if (lr && s.lastReceivedAt) lr.textContent = '마지막 채팅 수신: ' + timeAgo(s.lastReceivedAt);
+        var hero = heroState(s);
+        document.getElementById('hero-dot').className = 'dot ' + hero.dot;
+        document.getElementById('hero-title').textContent = hero.title;
+        document.getElementById('hero-sub').textContent = hero.sub;
 
         if (s.completion && s.completion.finishedAt !== lastCompletion) {
           lastCompletion = s.completion.finishedAt;
@@ -529,6 +552,21 @@ function renderHome() {
   </script>
 </body>
 </html>`;
+}
+
+// 지금 무슨 일이 벌어지고 있는지 한 줄로. 채팅이 들어오면 방송 중인 것이 확실하지만,
+// 조용하다고 방송이 끝난 것은 아니다(치지직 API로는 방송 여부를 알 수 없음).
+function heroState(s) {
+  if (!s.connected) return { dot: 'gray', title: '치지직 계정 연결이 필요합니다', sub: '아래 “치지직 연결”을 열어 연결해 주세요.' };
+  if (s.mode === 'idle') return { dot: 'gray', title: '대기 중', sub: '수집을 켜두면 방송이 시작될 때 채팅이 저장됩니다.' };
+  const saved = `${s.chatCount.toLocaleString('ko-KR')}줄 저장됨`;
+  if (s.mode === 'paused') return { dot: 'yellow', title: '일시정지', sub: `${saved} · 재개하면 같은 파일에 이어서 저장합니다.` };
+  if (!s.lastReceivedAt) return { dot: 'pulse', title: '수집 중 — 채팅 대기', sub: '방송이 시작되면 채팅이 저장됩니다.' };
+  const quietSec = Math.floor((Date.now() - new Date(s.lastReceivedAt).getTime()) / 1000);
+  const tail = `${saved} · 마지막 수신 ${fmtTime(s.lastReceivedAt)}`;
+  return quietSec < 120
+    ? { dot: 'pulse', title: '방송 채팅 수신 중', sub: tail }
+    : { dot: 'pulse', title: '수집 중 — 채팅 없음', sub: tail };
 }
 
 function renderHighlights(list) {

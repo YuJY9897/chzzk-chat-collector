@@ -19,23 +19,29 @@
       </div>
     </header>
 
-    <section class="card" id="status-card">
-      <div id="status-text">불러오는 중...</div>
+    <section class="card hero">
+      <div class="hero-state">
+        <span class="dot gray" id="hero-dot"></span>
+        <div>
+          <div class="hero-title" id="hero-title">불러오는 중...</div>
+          <div class="hero-sub" id="hero-sub"></div>
+        </div>
+      </div>
+      <div id="control-area"></div>
     </section>
 
-    <section class="card">
-      <h2>치지직 연결</h2>
+    <details class="fold" id="fold-connect">
+      <summary>치지직 연결 <span class="fold-hint" id="connect-hint"></span></summary>
       <div id="connect-area"></div>
-    </section>
+    </details>
 
-    <section class="card">
-      <h2>로그 수집</h2>
-      <p class="warning">지나간 채팅은 저장할 수 없어요. 방송 시작 전에 미리 켜두세요.</p>
-      <div id="collect-area"></div>
-    </section>
+    <details class="fold" id="fold-settings">
+      <summary>저장 설정 <span class="fold-hint" id="settings-hint"></span></summary>
+      <div id="settings-area"></div>
+    </details>
 
-    <section class="card hidden" id="result-card">
-      <h2>마지막 수집 결과</h2>
+    <details class="fold hidden" id="result-card">
+      <summary>마지막 수집 결과 <span class="fold-hint" id="result-hint"></span></summary>
       <p class="muted" id="result-meta"></p>
       <div class="filebox">
         <div class="filebox-title">CSV</div><code id="result-csv"></code>
@@ -45,15 +51,12 @@
       <div class="row mt12">
         <button class="ghost" id="reveal-btn" type="button">저장 폴더에서 보기</button>
       </div>
-    </section>
+    </details>
 
-    <section class="card">
-      <div class="row space-between">
-        <h2 class="no-margin">실시간 채팅</h2>
-        <span class="muted" id="last-received"></span>
-      </div>
+    <details class="fold">
+      <summary>실시간 채팅 <span class="fold-hint" id="chat-hint"></span></summary>
       <ul id="chat-list"><li><span class="muted">아직 수집된 채팅이 없습니다.</span></li></ul>
-    </section>
+    </details>
   </main>
 
   <div class="overlay hidden" id="end-modal">

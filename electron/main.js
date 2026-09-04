@@ -60,6 +60,7 @@ function getState() {
   return {
     connected: hasTokens(),
     connectedAt: connectedAt(),
+    chatCount: collector?.chatCount ?? 0,
     mode: getMode(),
     subscribed: Boolean(collector?.subscribed),
     status: statusText,
