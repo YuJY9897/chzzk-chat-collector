@@ -66,7 +66,14 @@ export class ChatCollector {
     this.lastChatAt = null;
     this.files = createOutputFiles(broadcastTitle, outputDir);
     this.running = true;
-    await this.connect();
+    try {
+      await this.connect();
+    } catch (error) {
+      // 파일을 먼저 만들고 연결하므로, 연결에 실패하면 빈 파일이 남는다
+      this.discardIfEmpty({ notify: false });
+      this.running = false;
+      throw error;
+    }
     return this.files;
   }
 
@@ -310,7 +317,7 @@ export class ChatCollector {
   }
 
   // 채팅이 한 줄도 없으면 헤더만 남은 빈 파일을 지운다
-  discardIfEmpty() {
+  discardIfEmpty({ notify = true } = {}) {
     if (!this.files || this.chatCount > 0) return false;
     for (const target of [this.files.csvPath, this.files.jsonlPath]) {
       try {
@@ -320,7 +327,7 @@ export class ChatCollector {
       }
     }
     this.files = null;
-    this.onStatus('수집된 채팅이 없어 빈 파일은 저장하지 않았습니다.');
+    if (notify) this.onStatus('수집된 채팅이 없어 빈 파일은 저장하지 않았습니다.');
     return true;
   }
 
