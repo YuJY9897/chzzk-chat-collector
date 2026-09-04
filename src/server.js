@@ -8,7 +8,7 @@ import { createAuthUrl, exchangeCode } from './oauth.js';
 import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './token-store.js';
 import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
-import { analyzeFile, analyzeLogFile, listLogFiles } from './highlight.js';
+import { analyzeFile, analyzeLogFile, chatsInRange, listLogFiles } from './highlight.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
@@ -47,6 +47,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/status') return sendJson(res, getStatus());
     if (req.method === 'GET' && url.pathname === '/api/logs') return sendJson(res, listLogFiles(defaultOutputDir));
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyzeLog(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/chats') return rangeChats(req, res);
 
     sendText(res, 'Not found', 404);
   } catch (error) {
@@ -172,19 +173,32 @@ function finishCollection(reason) {
     : `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}). 수집된 채팅이 없어 파일은 저장하지 않았습니다.`;
 }
 
+// 보안: 저장 폴더 안의 파일만 열어준다
+function safeLogPath(target) {
+  const resolved = path.resolve(target || '');
+  return resolved.startsWith(path.resolve(defaultOutputDir) + path.sep) ? resolved : null;
+}
+
 async function analyzeLog(req, res) {
-  let target = '';
+  const body = await readJson(req);
+  const target = safeLogPath(body?.path);
+  if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 분석할 수 있습니다.' });
+  sendJson(res, analyzeLogFile(target));
+}
+
+async function rangeChats(req, res) {
+  const body = await readJson(req);
+  const target = safeLogPath(body?.path);
+  if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 볼 수 있습니다.' });
+  sendJson(res, chatsInRange(target, Number(body?.startSec) || 0, Number(body?.endSec) || 0));
+}
+
+async function readJson(req) {
   try {
-    target = JSON.parse(await readBody(req))?.path || '';
+    return JSON.parse(await readBody(req));
   } catch {
-    target = '';
+    return null;
   }
-  // 보안: 저장 폴더 안의 파일만 분석한다
-  const resolved = path.resolve(target);
-  if (!resolved.startsWith(path.resolve(defaultOutputDir) + path.sep)) {
-    return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 분석할 수 있습니다.' });
-  }
-  sendJson(res, analyzeLogFile(resolved));
 }
 
 function openFolder(res) {
@@ -441,6 +455,12 @@ function renderHome() {
     .spark { width: 100%; height: 56px; margin-top: 14px; display: block; }
     .spark rect { fill: #1d2522; }
     .spark rect.hot { fill: #00d9a5; }
+    li.hl-open:hover { background: rgba(0,217,165,.04); }
+    .hl-detail { margin-top: 10px; padding: 10px 12px; background: #0e1311; border: 1px solid #232b28; border-radius: 9px; max-height: 240px; overflow-y: auto; cursor: auto; }
+    .hl-line { display: flex; gap: 9px; padding: 3px 0; font-size: 12.5px; align-items: baseline; border: 0; }
+    .hl-line time { color: #5f9c88; font-size: 11.5px; flex-shrink: 0; }
+    .hl-line b { color: #cfe0d8; flex-shrink: 0; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hl-line span { color: #a9b8b1; word-break: break-all; }
     .hl-title { font-size: 13px; color: #c9d6d0; margin: 16px 0 0; }
     .hl-rank { width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0; background: rgba(0,217,165,.12); color: #57e6c3; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
   </style>
@@ -561,6 +581,26 @@ function renderHome() {
       try { return new Date(iso).toLocaleTimeString('ko-KR', { hour12: false }); } catch (e) { return iso; }
     }
 
+    function toggleHighlightChats(item) {
+      var box = item.querySelector('.hl-detail');
+      if (!box.hidden) { box.hidden = true; return; }
+      box.hidden = false;
+      box.innerHTML = '<span class="muted">불러오는 중...</span>';
+      fetch('/api/chats', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: analyzedPath, startSec: Number(item.dataset.start), endSec: Number(item.dataset.end) }) })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { box.innerHTML = '<span class="muted">' + esc(result.error) + '</span>'; return; }
+          box.innerHTML = result.rows.map(function (r) {
+            return '<div class="hl-line"><time>' + fmtDur(r.sec) + '</time><b>' + esc(r.nickname) + '</b><span>' + esc(r.content) + '</span></div>';
+          }).join('') + (result.total > result.rows.length ? '<div class="muted" style="margin-top:8px;">…외 ' + (result.total - result.rows.length) + '줄</div>' : '');
+        });
+    }
+
+    document.addEventListener('click', function (event) {
+      var item = event.target.closest ? event.target.closest('.hl-open') : null;
+      if (item) toggleHighlightChats(item);
+    });
+
     function showTab(name) {
       var analyzing = name === 'analyze';
       document.getElementById('tab-collect').hidden = analyzing;
@@ -589,9 +629,12 @@ function renderHome() {
       });
     }
 
+    var analyzedPath = '';
+
     function analyzeLog() {
       var target = document.getElementById('log-select').value;
       if (!target) return;
+      analyzedPath = target;
       var box = document.getElementById('analyze-result');
       box.innerHTML = '<p class="muted" style="margin-top:12px;">분석 중...</p>';
       fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: target }) })
@@ -609,8 +652,8 @@ function renderHome() {
           var stats = [[result.totalChats.toLocaleString('ko-KR'), '채팅'], [fmtDur(result.durationSec), '길이'], [result.speakers.toLocaleString('ko-KR'), '발화자'], [result.perMinute, '분당 평균']]
             .map(function (p) { return '<div class="stat"><div class="stat-value">' + p[0] + '</div><div class="stat-label">' + p[1] + '</div></div>'; }).join('');
           var hl = result.highlights.length
-            ? '<h3 class="hl-title">하이라이트 ' + result.highlights.length + '개</h3><ul style="margin-top:8px;">' + result.highlights.map(function (h, i) {
-                return '<li style="align-items:center;gap:12px;"><span class="hl-rank">' + (i + 1) + '</span><span style="min-width:0;"><span style="color:#cfe0d8;font-size:13px;">' + fmtDur(h.startSec) + ' ~ ' + fmtDur(h.endSec) + '</span> <span class="muted" style="font-size:12px;">' + h.durationSec + '초 · 분당 ' + h.baselinePerMin + '→' + h.peakPerMin + '개</span><br><span class="muted" style="font-size:12.5px;">' + h.topMessages.map(function (m) { return esc(m.content) + ' x' + m.count; }).join(' · ') + '</span></span></li>';
+            ? '<h3 class="hl-title">하이라이트 ' + result.highlights.length + '개 <span class="muted">— 누르면 그 구간 채팅을 봅니다</span></h3><ul style="margin-top:8px;">' + result.highlights.map(function (h, i) {
+                return '<li class="hl-open" data-start="' + h.startSec + '" data-end="' + h.endSec + '" style="align-items:flex-start;gap:12px;cursor:pointer;"><span class="hl-rank">' + (i + 1) + '</span><span style="min-width:0;"><span style="color:#cfe0d8;font-size:13px;">' + fmtDur(h.startSec) + ' ~ ' + fmtDur(h.endSec) + '</span> <span class="muted" style="font-size:12px;">' + h.durationSec + '초 · 분당 ' + h.baselinePerMin + '→' + h.peakPerMin + '개 · 채팅 ' + h.chats + '줄</span><br><span class="muted" style="font-size:12.5px;">' + h.topMessages.map(function (m) { return esc(m.content) + ' x' + m.count; }).join(' · ') + '</span><div class="hl-detail" hidden></div></span></li>';
               }).join('') + '</ul>'
             : '<p class="muted" style="margin-top:12px;">하이라이트로 볼 만한 구간이 없습니다.</p>';
           box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl;

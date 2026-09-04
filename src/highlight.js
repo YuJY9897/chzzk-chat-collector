@@ -176,6 +176,19 @@ export function analyzeLogFile(csvPath, options = {}) {
   }
 }
 
+// 특정 구간의 채팅 원문. 하이라이트가 진짜 클립각인지 눈으로 확인할 때 쓴다.
+export function chatsInRange(csvPath, startSec, endSec, limit = 200) {
+  try {
+    if (!csvPath || !fs.existsSync(csvPath)) return { ok: false, error: '파일을 찾을 수 없습니다.' };
+    const rows = loadRowsFromCsv(csvPath)
+      .filter((r) => r.sec >= startSec && r.sec <= endSec)
+      .map((r) => ({ sec: r.sec, nickname: r.nickname, content: r.content }));
+    return { ok: true, total: rows.length, rows: rows.slice(0, limit) };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
 // 시간대별 채팅량 (그래프용). 구간 수를 고정해 어떤 길이든 같은 폭으로 그린다.
 function timeline(rows, durationSec, buckets = 60) {
   const size = Math.max(1, Math.ceil((durationSec + 1) / buckets));

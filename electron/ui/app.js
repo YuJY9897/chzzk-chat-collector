@@ -1,6 +1,7 @@
 let state = null;
 let modalShownFor = '';
 let settingsReady = false;
+let analyzedPath = '';
 
 const $ = (id) => document.getElementById(id);
 
@@ -113,6 +114,43 @@ function renderSpark(timeline) {
   return `<svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg>`;
 }
 
+// 분석 화면의 하이라이트는 눌러서 그 구간 채팅을 펼쳐볼 수 있다
+function renderAnalysisHighlights(list) {
+  if (!list || !list.length) return '<p class="muted mt12">하이라이트로 볼 만한 구간이 없습니다.</p>';
+  const items = list
+    .map((h, i) => `
+      <li class="hl hl-open" data-start="${h.startSec}" data-end="${h.endSec}">
+        <span class="hl-rank">${i + 1}</span>
+        <div class="hl-body">
+          <div class="hl-time">${fmtDuration(h.startSec)} ~ ${fmtDuration(h.endSec)}
+            <span class="muted">${h.durationSec}초 · 분당 ${h.baselinePerMin}→${h.peakPerMin}개 · 채팅 ${h.chats}줄</span>
+          </div>
+          <div class="hl-msg">${h.topMessages.map((m) => `${esc(m.content)} <span class="muted">x${m.count}</span>`).join(' · ')}</div>
+          <div class="hl-detail" hidden></div>
+        </div>
+      </li>`)
+    .join('');
+  return `<h3 class="hl-title">하이라이트 ${list.length}개 <span class="muted">— 누르면 그 구간 채팅을 봅니다</span></h3><ul class="hl-list">${items}</ul>`;
+}
+
+async function toggleHighlightChats(item) {
+  const box = item.querySelector('.hl-detail');
+  if (!box.hidden) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = '<span class="muted">불러오는 중...</span>';
+  const result = await window.api.rangeChats(analyzedPath, Number(item.dataset.start), Number(item.dataset.end));
+  if (!result.ok) {
+    box.innerHTML = `<span class="muted">${esc(result.error)}</span>`;
+    return;
+  }
+  box.innerHTML = result.rows
+    .map((r) => `<div class="hl-line"><time>${fmtDuration(r.sec)}</time><b>${esc(r.nickname)}</b><span>${esc(r.content)}</span></div>`)
+    .join('') + (result.total > result.rows.length ? `<div class="muted mt8">…외 ${result.total - result.rows.length}줄</div>` : '');
+}
+
 function renderAnalysis(result) {
   if (!result) return '';
   if (!result.ok) return `<p class="muted mt12">${esc(result.error)}</p>`;
@@ -124,7 +162,7 @@ function renderAnalysis(result) {
       <div class="stat"><div class="stat-value">${result.perMinute}</div><div class="stat-label">분당 평균</div></div>
     </div>
     ${renderSpark(result.timeline)}
-    ${renderHighlights(result.highlights)}`;
+    ${renderAnalysisHighlights(result.highlights)}`;
 }
 
 async function loadLogList() {
@@ -288,8 +326,13 @@ async function refresh() {
 $('analyze-btn').addEventListener('click', async () => {
   const target = $('log-select').value;
   if (!target) return;
+  analyzedPath = target;
   $('analyze-result').innerHTML = '<p class="muted mt12">분석 중...</p>';
   $('analyze-result').innerHTML = renderAnalysis(await window.api.analyzeLog(target));
+});
+$('analyze-result').addEventListener('click', (event) => {
+  const item = event.target.closest('.hl-open');
+  if (item) toggleHighlightChats(item);
 });
 $('log-refresh-btn').addEventListener('click', loadLogList);
 $('tab-collect-btn').addEventListener('click', () => showTab('collect'));
