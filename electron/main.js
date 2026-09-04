@@ -17,7 +17,7 @@ const { ChatCollector } = await import('../src/chat-collector.js');
 const { createAuthUrl, exchangeCode } = await import('../src/oauth.js');
 const { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } = await import('../src/token-store.js');
 const { isAuthError } = await import('../src/http.js');
-const { analyzeFile } = await import('../src/highlight.js');
+const { analyzeFile, analyzeLogFile, listLogFiles } = await import('../src/highlight.js');
 
 const SETTINGS_PATH = path.join(baseDir, 'settings.json');
 const REASON_TEXT = {
@@ -374,6 +374,10 @@ ipcMain.handle('collect:off', () => {
   pushState();
   return { ok: true };
 });
+
+ipcMain.handle('logs:list', (_event, dir) => listLogFiles(dir || path.resolve('./data')));
+
+ipcMain.handle('logs:analyze', (_event, csvPath) => analyzeLogFile(csvPath));
 
 ipcMain.handle('dialog:pickFolder', async () => {
   const result = await dialog.showOpenDialog(win, {

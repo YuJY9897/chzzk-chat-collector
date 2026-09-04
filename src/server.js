@@ -8,7 +8,7 @@ import { createAuthUrl, exchangeCode } from './oauth.js';
 import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './token-store.js';
 import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
-import { analyzeFile } from './highlight.js';
+import { analyzeFile, analyzeLogFile, listLogFiles } from './highlight.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
@@ -45,6 +45,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/logout') return logout(res);
     if (req.method === 'POST' && url.pathname === '/api/app/quit') return quitApp(res);
     if (req.method === 'GET' && url.pathname === '/api/status') return sendJson(res, getStatus());
+    if (req.method === 'GET' && url.pathname === '/api/logs') return sendJson(res, listLogFiles(defaultOutputDir));
+    if (req.method === 'POST' && url.pathname === '/api/analyze') return analyzeLog(req, res);
 
     sendText(res, 'Not found', 404);
   } catch (error) {
@@ -168,6 +170,21 @@ function finishCollection(reason) {
   status = files
     ? `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}).`
     : `수집이 종료되었습니다 (${REASON_TEXT[reason] || reason}). 수집된 채팅이 없어 파일은 저장하지 않았습니다.`;
+}
+
+async function analyzeLog(req, res) {
+  let target = '';
+  try {
+    target = JSON.parse(await readBody(req))?.path || '';
+  } catch {
+    target = '';
+  }
+  // 보안: 저장 폴더 안의 파일만 분석한다
+  const resolved = path.resolve(target);
+  if (!resolved.startsWith(path.resolve(defaultOutputDir) + path.sep)) {
+    return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 분석할 수 있습니다.' });
+  }
+  sendJson(res, analyzeLogFile(resolved));
 }
 
 function openFolder(res) {
@@ -413,6 +430,15 @@ function renderHome() {
     .fold[open] > summary { margin-bottom: 10px; }
     .fold-hint { margin-left: auto; color: #6f7f77; font-size: 12px; font-weight: 400; }
     .fold details { border: 0; padding: 0; }
+    .stat-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+    .stat { min-width: 72px; }
+    .stat-value { font-size: 17px; font-weight: 700; color: #cfe0d8; }
+    .stat-label { font-size: 11.5px; color: #6f7f77; }
+    .spark { width: 100%; height: 56px; margin-top: 14px; display: block; }
+    .spark rect { fill: #1d2522; }
+    .spark rect.hot { fill: #00d9a5; }
+    .hl-title { font-size: 13px; color: #c9d6d0; margin: 16px 0 0; }
+    .hl-rank { width: 22px; height: 22px; border-radius: 6px; flex-shrink: 0; background: rgba(0,217,165,.12); color: #57e6c3; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
   </style>
 </head>
 <body>
@@ -445,6 +471,15 @@ function renderHome() {
     </details>
 
     ${resultCard}
+
+    <details class="fold" id="fold-analyze" ontoggle="if (this.open) loadLogList()">
+      <summary>저장된 로그 분석 <span class="fold-hint" id="analyze-hint"></span></summary>
+      <div class="row" style="flex-wrap:nowrap;">
+        <select id="log-select" style="flex:1;min-width:0;padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;"></select>
+        <button class="ghost" type="button" onclick="analyzeLog()">분석</button>
+      </div>
+      <div id="analyze-result"></div>
+    </details>
 
     <details class="fold">
       <summary>실시간 채팅 <span class="fold-hint" id="chat-hint">${current.chatCount ? `${current.chatCount.toLocaleString('ko-KR')}줄` : ''}</span></summary>
@@ -509,6 +544,54 @@ function renderHome() {
 
     function fmtClock(iso) {
       try { return new Date(iso).toLocaleTimeString('ko-KR', { hour12: false }); } catch (e) { return iso; }
+    }
+
+    function fmtBytes(n) {
+      return n < 1024 ? n + 'B' : n < 1048576 ? (n / 1024).toFixed(1) + 'KB' : (n / 1048576).toFixed(1) + 'MB';
+    }
+
+    function fmtDur(sec) {
+      var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s2 = Math.floor(sec % 60);
+      var mm = String(m).padStart(2, '0'), ss = String(s2).padStart(2, '0');
+      return h ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+    }
+
+    function loadLogList() {
+      fetch('/api/logs').then(function (r) { return r.json(); }).then(function (logs) {
+        var sel = document.getElementById('log-select');
+        sel.innerHTML = logs.length
+          ? logs.map(function (f) { return '<option value="' + esc(f.path) + '">' + esc(f.name) + ' · ' + fmtBytes(f.size) + '</option>'; }).join('')
+          : '<option value="">저장된 로그가 없습니다</option>';
+        document.getElementById('analyze-hint').textContent = logs.length ? logs.length + '개' : '';
+      });
+    }
+
+    function analyzeLog() {
+      var target = document.getElementById('log-select').value;
+      if (!target) return;
+      var box = document.getElementById('analyze-result');
+      box.innerHTML = '<p class="muted" style="margin-top:12px;">분석 중...</p>';
+      fetch('/api/analyze', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: target }) })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { box.innerHTML = '<p class="muted" style="margin-top:12px;">' + esc(result.error) + '</p>'; return; }
+          var counts = result.timeline.counts;
+          var max = Math.max.apply(null, counts.concat([1]));
+          var avg = counts.reduce(function (a, b) { return a + b; }, 0) / counts.length;
+          var w = 100 / counts.length;
+          var bars = counts.map(function (c, i) {
+            var h = Math.max(1, (c / max) * 100);
+            return '<rect x="' + (i * w).toFixed(3) + '" y="' + (100 - h).toFixed(2) + '" width="' + (w * 0.8).toFixed(3) + '" height="' + h.toFixed(2) + '"' + (c > avg * 2 ? ' class="hot"' : '') + '></rect>';
+          }).join('');
+          var stats = [[result.totalChats.toLocaleString('ko-KR'), '채팅'], [fmtDur(result.durationSec), '길이'], [result.speakers.toLocaleString('ko-KR'), '발화자'], [result.perMinute, '분당 평균']]
+            .map(function (p) { return '<div class="stat"><div class="stat-value">' + p[0] + '</div><div class="stat-label">' + p[1] + '</div></div>'; }).join('');
+          var hl = result.highlights.length
+            ? '<h3 class="hl-title">하이라이트 ' + result.highlights.length + '개</h3><ul style="margin-top:8px;">' + result.highlights.map(function (h, i) {
+                return '<li style="align-items:center;gap:12px;"><span class="hl-rank">' + (i + 1) + '</span><span style="min-width:0;"><span style="color:#cfe0d8;font-size:13px;">' + fmtDur(h.startSec) + ' ~ ' + fmtDur(h.endSec) + '</span> <span class="muted" style="font-size:12px;">' + h.durationSec + '초 · 분당 ' + h.baselinePerMin + '→' + h.peakPerMin + '개</span><br><span class="muted" style="font-size:12.5px;">' + h.topMessages.map(function (m) { return esc(m.content) + ' x' + m.count; }).join(' · ') + '</span></span></li>';
+              }).join('') + '</ul>'
+            : '<p class="muted" style="margin-top:12px;">하이라이트로 볼 만한 구간이 없습니다.</p>';
+          box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl;
+        });
     }
 
     function heroState(s) {

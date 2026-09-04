@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 
 // 채팅 로그에서 하이라이트 구간을 찾는다.
 // 채팅량만 보면 방송 초반 인사나 꾸준한 수다에도 걸리므로
@@ -152,6 +153,37 @@ export function analyzeFile(csvPath, options = {}) {
   }
 }
 
+// 저장된 로그를 열어 보기 위한 분석. 하이라이트 + 개요 + 시간대별 채팅량을 함께 준다.
+export function analyzeLogFile(csvPath, options = {}) {
+  try {
+    if (!csvPath || !fs.existsSync(csvPath)) return { ok: false, error: '파일을 찾을 수 없습니다.' };
+    const rows = loadRowsFromCsv(csvPath);
+    if (!rows.length) return { ok: false, error: '채팅이 없는 파일입니다.' };
+
+    const durationSec = Math.max(...rows.map((r) => r.sec));
+    const speakers = new Set(rows.map((r) => r.sender));
+    return {
+      ok: true,
+      totalChats: rows.length,
+      durationSec,
+      speakers: speakers.size,
+      perMinute: durationSec > 0 ? Number((rows.length / (durationSec / 60)).toFixed(1)) : rows.length,
+      timeline: timeline(rows, durationSec),
+      highlights: detectHighlights(rows, { topN: 10, ...options })
+    };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
+// 시간대별 채팅량 (그래프용). 구간 수를 고정해 어떤 길이든 같은 폭으로 그린다.
+function timeline(rows, durationSec, buckets = 60) {
+  const size = Math.max(1, Math.ceil((durationSec + 1) / buckets));
+  const counts = new Array(Math.ceil((durationSec + 1) / size)).fill(0);
+  for (const row of rows) counts[Math.floor(row.sec / size)] += 1;
+  return { bucketSec: size, counts };
+}
+
 export function loadRowsFromCsv(file) {
   const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
   const header = parseCsvLine(lines[0]);
@@ -202,4 +234,20 @@ function parseCsvLine(line) {
   }
   out.push(value);
   return out;
+}
+
+// 저장 폴더의 수집 로그 목록 (최신순)
+export function listLogFiles(dir) {
+  try {
+    return fs.readdirSync(dir)
+      .filter((name) => name.toLowerCase().endsWith('.csv'))
+      .map((name) => {
+        const full = path.join(dir, name);
+        const stat = fs.statSync(full);
+        return { name, path: full, size: stat.size, modifiedAt: stat.mtime.toISOString() };
+      })
+      .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  } catch {
+    return [];
+  }
 }

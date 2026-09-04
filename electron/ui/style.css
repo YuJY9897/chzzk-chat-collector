@@ -172,3 +172,17 @@ li.hl { align-items: center; gap: 12px; }
 .fold[open] > summary { margin-bottom: 10px; }
 .fold-hint { margin-left: auto; color: #6f7f77; font-size: 12px; font-weight: 400; }
 .fold details { border: 0; padding: 0; }
+
+/* 저장된 로그 분석 */
+select {
+  flex: 1; min-width: 0; padding: 10px 12px;
+  border: 1px solid #2c3733; border-radius: 9px;
+  background: #0e1311; color: #eef4f1; font-size: 13px; font-family: inherit;
+}
+.stat-row { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 14px; }
+.stat { min-width: 72px; }
+.stat-value { font-size: 17px; font-weight: 700; color: #cfe0d8; }
+.stat-label { font-size: 11.5px; color: #6f7f77; }
+.spark { width: 100%; height: 56px; margin-top: 14px; display: block; }
+.spark rect { fill: #1d2522; }
+.spark rect.hot { fill: #00d9a5; }

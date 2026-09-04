@@ -11,5 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   off: () => ipcRenderer.invoke('collect:off'),
   pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openPath: (dir) => ipcRenderer.invoke('shell:openPath', dir),
-  revealFiles: () => ipcRenderer.invoke('shell:reveal')
+  revealFiles: () => ipcRenderer.invoke('shell:reveal'),
+  listLogs: (dir) => ipcRenderer.invoke('logs:list', dir),
+  analyzeLog: (csvPath) => ipcRenderer.invoke('logs:analyze', csvPath)
 });

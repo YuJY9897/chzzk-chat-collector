@@ -94,6 +94,49 @@ function renderHighlights(list) {
   return `<h3 class="hl-title">하이라이트 ${list.length}개</h3><ul class="hl-list">${items}</ul>`;
 }
 
+function fmtBytes(n) {
+  return n < 1024 ? `${n}B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)}KB` : `${(n / 1024 / 1024).toFixed(1)}MB`;
+}
+
+// 시간대별 채팅량 막대. 평균의 2배를 넘는 구간은 색을 다르게 해서 눈에 띄게 한다.
+function renderSpark(timeline) {
+  const counts = timeline.counts;
+  const max = Math.max(...counts, 1);
+  const avg = counts.reduce((a, b) => a + b, 0) / counts.length;
+  const w = 100 / counts.length;
+  const bars = counts
+    .map((c, i) => {
+      const h = Math.max(1, (c / max) * 100);
+      return `<rect x="${(i * w).toFixed(3)}" y="${(100 - h).toFixed(2)}" width="${(w * 0.8).toFixed(3)}" height="${h.toFixed(2)}"${c > avg * 2 ? ' class="hot"' : ''}></rect>`;
+    })
+    .join('');
+  return `<svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">${bars}</svg>`;
+}
+
+function renderAnalysis(result) {
+  if (!result) return '';
+  if (!result.ok) return `<p class="muted mt12">${esc(result.error)}</p>`;
+  return `
+    <div class="stat-row">
+      <div class="stat"><div class="stat-value">${result.totalChats.toLocaleString('ko-KR')}</div><div class="stat-label">채팅</div></div>
+      <div class="stat"><div class="stat-value">${fmtDuration(result.durationSec)}</div><div class="stat-label">길이</div></div>
+      <div class="stat"><div class="stat-value">${result.speakers.toLocaleString('ko-KR')}</div><div class="stat-label">발화자</div></div>
+      <div class="stat"><div class="stat-value">${result.perMinute}</div><div class="stat-label">분당 평균</div></div>
+    </div>
+    ${renderSpark(result.timeline)}
+    ${renderHighlights(result.highlights)}`;
+}
+
+async function loadLogList() {
+  const logs = await window.api.listLogs();
+  const select = $('log-select');
+  select.innerHTML = logs.length
+    ? logs.map((f) => `<option value="${esc(f.path)}">${esc(f.name)} · ${fmtBytes(f.size)}</option>`).join('')
+    : '<option value="">저장된 로그가 없습니다</option>';
+  $('analyze-hint').textContent = logs.length ? `${logs.length}개` : '';
+  $('analyze-btn').disabled = !logs.length;
+}
+
 function render(next) {
   const prevMode = state?.mode;
   state = next;
@@ -233,6 +276,14 @@ function renderControls(mode) {
 async function refresh() {
   render(await window.api.getState());
 }
+
+$('analyze-btn').addEventListener('click', async () => {
+  const target = $('log-select').value;
+  if (!target) return;
+  $('analyze-result').innerHTML = '<p class="muted mt12">분석 중...</p>';
+  $('analyze-result').innerHTML = renderAnalysis(await window.api.analyzeLog(target));
+});
+$('fold-analyze').addEventListener('toggle', () => { if ($('fold-analyze').open) loadLogList(); });
 
 $('reveal-btn').addEventListener('click', () => window.api.revealFiles());
 $('modal-reveal').addEventListener('click', () => window.api.revealFiles());
