@@ -22,6 +22,8 @@
     <nav class="tabs">
       <button class="tab active" id="tab-collect-btn" type="button">수집</button>
       <button class="tab" id="tab-analyze-btn" type="button">분석</button>
+      <button class="tab" id="tab-info-btn" type="button">정보</button>
+      <span class="version" id="app-version"></span>
     </nav>
 
     <div id="tab-collect">
@@ -72,6 +74,7 @@
         <div class="row mt12">
           <select id="log-select"></select>
           <button class="ghost small" id="log-refresh-btn" type="button">↻</button>
+          <button class="ghost small" id="log-delete-btn" type="button">삭제</button>
         </div>
         <div class="row mt8">
           <select id="threshold-select">
@@ -103,6 +106,29 @@
           </div>
           <p class="muted mt8">편집자에게 넘길 수 있는 기록 문서로 저장합니다. 편집점 후보를 시간순으로 정리하고, 구간별 채팅량과 발화자 요약을 함께 담습니다.</p>
         </div>
+      </section>
+    </div>
+    <div id="tab-info" hidden>
+      <div class="info-nav">
+        <button class="chip active" data-info="manual" type="button">설명서</button>
+        <button class="chip" data-info="patch" type="button">패치노트</button>
+        <button class="chip" data-info="notice" type="button">고지사항</button>
+        <button class="chip" data-info="feedback" type="button">피드백</button>
+      </div>
+
+      <section class="card" id="info-manual"></section>
+      <section class="card hidden" id="info-patch"></section>
+      <section class="card hidden" id="info-notice"></section>
+
+      <section class="card hidden" id="info-feedback">
+        <h2 class="no-margin">피드백 보내기</h2>
+        <p class="muted mt8">불편한 점이나 필요한 기능을 적어 주세요. 버튼을 누르면 기본 메일 앱이 열립니다. 앱이 직접 메일을 보내지 않으며, 보내기 전에 내용을 확인할 수 있습니다.</p>
+        <textarea id="feedback-body" rows="7" placeholder="예) 분석 결과를 엑셀로 내보내면 좋겠어요"></textarea>
+        <div class="row mt12">
+          <button class="primary" id="feedback-btn" type="button">메일 앱으로 보내기</button>
+          <span class="muted" id="feedback-done"></span>
+        </div>
+        <p class="muted mt12" id="feedback-to"></p>
       </section>
     </div>
   </main>

@@ -2,6 +2,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   getState: () => ipcRenderer.invoke('state:get'),
+  appInfo: () => ipcRenderer.invoke('app:info'),
+  sendFeedback: (body) => ipcRenderer.invoke('app:feedback', body),
   onState: (callback) => ipcRenderer.on('state', (_event, state) => callback(state)),
   startAuth: () => ipcRenderer.invoke('auth:start'),
   logout: () => ipcRenderer.invoke('auth:logout'),
@@ -17,5 +19,6 @@ contextBridge.exposeInMainWorld('api', {
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   rangeChats: (csvPath, startSec, endSec) => ipcRenderer.invoke('logs:chats', csvPath, startSec, endSec),
   intervals: (csvPath, intervalSec) => ipcRenderer.invoke('logs:intervals', csvPath, intervalSec),
+  deleteLog: (csvPath) => ipcRenderer.invoke('logs:delete', csvPath),
   saveReport: (csvPath, intervalSec, threshold) => ipcRenderer.invoke('logs:report', csvPath, intervalSec, threshold)
 });

@@ -15,6 +15,13 @@ const LEAD_OUT_SEC = 5;
 // 놀람·웃음·클립 요청 같은 "터졌을 때" 나오는 표현
 const REACTION = /ㅋ{3,}|ㅠ{3,}|ㅎ{3,}|클립|헐|대박|미친|레전드|소름|지렸|박제|실화|개웃|와+아+|ㅗㅜㅑ|[?!]{2,}|뭐야|뭐임/;
 
+// rows가 수십만 줄이면 Math.max(...배열)은 콜스택을 넘겨 죽는다
+function maxSec(rows) {
+  let max = 0;
+  for (const row of rows) if (row.sec > max) max = row.sec;
+  return max;
+}
+
 export function detectHighlights(rows, options = {}) {
   const {
     threshold = 3, // 평상시 대비 몇 배부터 하이라이트로 볼지
@@ -25,7 +32,7 @@ export function detectHighlights(rows, options = {}) {
 
   if (!rows.length) return [];
 
-  const endSec = Math.max(...rows.map((r) => r.sec));
+  const endSec = maxSec(rows);
   const perSec = new Array(endSec + 1).fill(0);
   const reactionPerSec = new Array(endSec + 1).fill(0);
   const chattersPerSec = Array.from({ length: endSec + 1 }, () => new Set());
@@ -225,7 +232,7 @@ export function analyzeLogFile(csvPath, options = {}) {
     const rows = loadRowsFromCsv(csvPath);
     if (!rows.length) return { ok: false, error: '채팅이 없는 파일입니다.' };
 
-    const durationSec = Math.max(...rows.map((r) => r.sec));
+    const durationSec = maxSec(rows);
     const speakers = new Set(rows.map((r) => r.sender));
     return {
       ok: true,
@@ -252,7 +259,7 @@ export function intervalStats(csvPath, intervalSec = 300) {
     if (!rows.length) return { ok: false, error: '채팅이 없는 파일입니다.' };
 
     const step = Math.max(30, Math.floor(intervalSec));
-    const endSec = Math.max(...rows.map((r) => r.sec));
+    const endSec = maxSec(rows);
     const buckets = Array.from({ length: Math.floor(endSec / step) + 1 }, (_, i) => ({
       startSec: i * step,
       endSec: Math.min((i + 1) * step, endSec + 1),
@@ -270,7 +277,7 @@ export function intervalStats(csvPath, intervalSec = 300) {
 
     const perMinList = buckets.map((b) => b.chats / (step / 60));
     const base = median(perMinList) || 1;
-    const peak = Math.max(...buckets.map((b) => b.chats), 1);
+    const peak = buckets.reduce((m, b) => (b.chats > m ? b.chats : m), 1);
 
     // 간격이 길수록 평균이 희석돼 고정 배수(예: 1.5배)로는 아무것도 안 걸린다.
     // 그래서 "상위 20% 안에 들면서 평상시보다 많은 구간"을 눈에 띄게 표시한다.
@@ -412,6 +419,25 @@ function parseCsvLine(line) {
   return out;
 }
 
+// 로그와 같은 이름의 파일들(csv, jsonl, report)을 함께 지운다
+export function deleteLog(csvPath) {
+  try {
+    if (!csvPath || !fs.existsSync(csvPath)) return { ok: false, error: '파일을 찾을 수 없습니다.' };
+    const base = csvPath.replace(/\.csv$/i, '');
+    let removed = 0;
+    for (const suffix of ['.csv', '.jsonl', '.report.md', '.highlights.json']) {
+      const target = base + suffix;
+      if (fs.existsSync(target)) {
+        fs.unlinkSync(target);
+        removed += 1;
+      }
+    }
+    return { ok: true, removed };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
 // 저장 폴더의 수집 로그 목록 (최신순)
 export function listLogFiles(dir) {
   try {
@@ -420,7 +446,14 @@ export function listLogFiles(dir) {
       .map((name) => {
         const full = path.join(dir, name);
         const stat = fs.statSync(full);
-        return { name, path: full, size: stat.size, modifiedAt: stat.mtime.toISOString() };
+        // 파일명만으로는 어떤 방송인지 알기 어려워 줄 수와 날짜를 함께 보여준다
+        let chats = 0;
+        try {
+          chats = Math.max(0, fs.readFileSync(full, 'utf8').trimEnd().split(String.fromCharCode(10)).length - 1);
+        } catch {
+          chats = 0;
+        }
+        return { name, path: full, size: stat.size, chats, modifiedAt: stat.mtime.toISOString() };
       })
       .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
   } catch {

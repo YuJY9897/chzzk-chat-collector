@@ -8,8 +8,11 @@ import { createAuthUrl, exchangeCode } from './oauth.js';
 import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './token-store.js';
 import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
-import { analyzeFile, analyzeLogFile, chatsInRange, intervalStats, listLogFiles } from './highlight.js';
+import { analyzeFile, analyzeLogFile, chatsInRange, deleteLog, intervalStats, listLogFiles } from './highlight.js';
 import { saveReport } from './report.js';
+import { AUTHOR, FEEDBACK_EMAIL, MANUAL, NOTICES, PATCH_NOTES } from './app-info.js';
+
+const APP_VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
@@ -51,6 +54,8 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/chats') return rangeChats(req, res);
     if (req.method === 'POST' && url.pathname === '/api/intervals') return intervals(req, res);
     if (req.method === 'POST' && url.pathname === '/api/report') return report(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/logs/delete') return removeLog(req, res);
+    if (req.method === 'GET' && url.pathname === '/api/info') return sendJson(res, { version: APP_VERSION, author: AUTHOR, email: FEEDBACK_EMAIL, manual: MANUAL, notices: NOTICES, patchNotes: PATCH_NOTES });
 
     sendText(res, 'Not found', 404);
   } catch (error) {
@@ -209,6 +214,13 @@ async function report(req, res) {
   const target = safeLogPath(body?.path);
   if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 만들 수 있습니다.' });
   sendJson(res, saveReport(target, { intervalSec: Number(body?.intervalSec) || 300, threshold: Number(body?.threshold) || undefined }));
+}
+
+async function removeLog(req, res) {
+  const body = await readJson(req);
+  const target = safeLogPath(body?.path);
+  if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 지울 수 있습니다.' });
+  sendJson(res, deleteLog(target));
 }
 
 async function readJson(req) {
@@ -463,6 +475,21 @@ function renderHome() {
     .fold-hint { margin-left: auto; color: #6f7f77; font-size: 12px; font-weight: 400; }
     .fold details { border: 0; padding: 0; }
     .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+    .version { margin-left: auto; align-self: center; color: #566159; font-size: 12px; }
+    .info-nav { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+    .chip { background: #161c1a; color: #7d8c85; border: 1px solid #232b28; padding: 6px 13px; font-size: 12.5px; border-radius: 999px; }
+    .chip:hover { color: #cfe0d8; }
+    .chip.active { background: rgba(0,217,165,.12); color: #57e6c3; border-color: rgba(0,217,165,.3); }
+    .doc h3 { font-size: 13.5px; color: #cfe0d8; margin: 18px 0 6px; }
+    .doc h3:first-child { margin-top: 0; }
+    .doc ul { list-style: none; padding: 0; margin: 0; }
+    .doc li { display: list-item; padding: 3px 0; border: 0; color: #a9b8b1; font-size: 13px; line-height: 1.6; }
+    .doc li::before { content: '· '; color: #566159; }
+    .pn-ver { display: flex; align-items: baseline; gap: 9px; margin: 18px 0 6px; }
+    .pn-ver:first-child { margin-top: 0; }
+    .pn-num { font-size: 14px; font-weight: 700; color: #57e6c3; }
+    .pn-date { font-size: 11.5px; color: #6f7f77; }
+    .pn-tag { font-size: 11px; font-weight: 700; color: #6f7f77; margin: 8px 0 2px; }
     .tab { background: transparent; color: #7d8c85; border: 1px solid transparent; padding: 8px 16px; font-size: 13.5px; border-radius: 9px; }
     .tab:hover { color: #cfe0d8; }
     .tab.active { background: #1d2522; color: #eef4f1; border-color: #2c3733; }
@@ -514,6 +541,8 @@ function renderHome() {
     <nav class="tabs">
       <button class="tab active" id="tab-collect-btn" type="button" onclick="showTab('collect')">수집</button>
       <button class="tab" id="tab-analyze-btn" type="button" onclick="showTab('analyze')">분석</button>
+      <button class="tab" id="tab-info-btn" type="button" onclick="showTab('info')">정보</button>
+      <span class="version">v${APP_VERSION}</span>
     </nav>
 
     <div id="tab-collect">
@@ -553,6 +582,7 @@ function renderHome() {
         <div class="row" style="flex-wrap:nowrap;margin-top:12px;">
           <select id="log-select" style="flex:1;min-width:0;padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;"></select>
           <button class="ghost small" type="button" onclick="loadLogList()">↻</button>
+          <button class="ghost small" type="button" onclick="deleteLog()">삭제</button>
         </div>
         <div class="row" style="margin-top:8px;">
           <select id="threshold-select" style="padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;">
@@ -584,6 +614,28 @@ function renderHome() {
           </div>
           <p class="muted" style="margin-top:8px;">편집자에게 넘길 수 있는 기록 문서로 저장합니다. 편집점 후보를 시간순으로 정리하고, 구간별 채팅량과 발화자 요약을 함께 담습니다.</p>
         </div>
+      </section>
+    </div>
+
+    <div id="tab-info" hidden>
+      <div class="info-nav">
+        <button class="chip active" type="button" onclick="showInfoSection('manual')" data-info="manual">설명서</button>
+        <button class="chip" type="button" onclick="showInfoSection('patch')" data-info="patch">패치노트</button>
+        <button class="chip" type="button" onclick="showInfoSection('notice')" data-info="notice">고지사항</button>
+        <button class="chip" type="button" onclick="showInfoSection('feedback')" data-info="feedback">피드백</button>
+      </div>
+      <section class="card" id="info-manual"></section>
+      <section class="card hidden" id="info-patch"></section>
+      <section class="card hidden" id="info-notice"></section>
+      <section class="card hidden" id="info-feedback">
+        <h2>피드백 보내기</h2>
+        <p class="muted">불편한 점이나 필요한 기능을 적어 주세요. 버튼을 누르면 기본 메일 앱이 열립니다. 앱이 직접 메일을 보내지 않으며, 보내기 전에 내용을 확인할 수 있습니다.</p>
+        <textarea id="feedback-body" rows="7" placeholder="예) 분석 결과를 엑셀로 내보내면 좋겠어요" style="width:100%;padding:11px 14px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13.5px;font-family:inherit;resize:vertical;line-height:1.5;margin-top:10px;"></textarea>
+        <div class="row" style="margin-top:12px;">
+          <button class="primary" type="button" onclick="sendFeedback()">메일 앱으로 보내기</button>
+          <span class="muted" id="feedback-done"></span>
+        </div>
+        <p class="muted" id="feedback-to" style="margin-top:12px;"></p>
       </section>
     </div>
 
@@ -712,13 +764,79 @@ function renderHome() {
       if (item) toggleHighlightChats(item);
     });
 
+    var info = null;
+
     function showTab(name) {
-      var analyzing = name === 'analyze';
-      document.getElementById('tab-collect').hidden = analyzing;
-      document.getElementById('tab-analyze').hidden = !analyzing;
-      document.getElementById('tab-collect-btn').classList.toggle('active', !analyzing);
-      document.getElementById('tab-analyze-btn').classList.toggle('active', analyzing);
-      if (analyzing) loadLogList();
+      ['collect', 'analyze', 'info'].forEach(function (key) {
+        document.getElementById('tab-' + key).hidden = key !== name;
+        document.getElementById('tab-' + key + '-btn').classList.toggle('active', key === name);
+      });
+      if (name === 'analyze') loadLogList();
+      if (name === 'info') loadInfo();
+    }
+
+    function renderDoc(sections) {
+      return '<div class="doc">' + sections.map(function (sec) {
+        return '<h3>' + esc(sec.title) + '</h3><ul>' + sec.steps.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>';
+      }).join('') + '</div>';
+    }
+
+    function loadInfo() {
+      if (info) return;
+      fetch('/api/info').then(function (r) { return r.json(); }).then(function (data) {
+        info = data;
+        document.getElementById('info-manual').innerHTML = '<h2>사용 설명서</h2>' + renderDoc(data.manual);
+        document.getElementById('info-patch').innerHTML = '<h2>패치노트</h2><div class="doc">' + data.patchNotes.map(function (v) {
+          return '<div class="pn-ver"><span class="pn-num">v' + esc(v.version) + '</span><span class="pn-date">' + esc(v.date) + '</span></div>'
+            + (v.added.length ? '<div class="pn-tag">추가</div><ul>' + v.added.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '')
+            + (v.fixed.length ? '<div class="pn-tag">수정</div><ul>' + v.fixed.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '');
+        }).join('') + '</div>';
+        document.getElementById('info-notice').innerHTML = '<h2>고지사항</h2><div class="doc"><ul>'
+          + data.notices.map(function (t) { return '<li>' + esc(t) + '</li>'; }).join('')
+          + '</ul></div><p class="muted" style="margin-top:12px;">만든 사람: ' + esc(data.author) + ' · 버전 v' + esc(data.version) + '</p>';
+        document.getElementById('feedback-to').textContent = '받는 사람: ' + data.email + ' · 만든 사람 ' + data.author;
+      });
+    }
+
+    function showInfoSection(name) {
+      ['manual', 'patch', 'notice', 'feedback'].forEach(function (key) {
+        document.getElementById('info-' + key).classList.toggle('hidden', key !== name);
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.chip[data-info]'), function (c) {
+        c.classList.toggle('active', c.dataset.info === name);
+      });
+    }
+
+    // 피드백은 기본 메일 앱을 열어 보낸다 (서버가 메일을 직접 보내지 않는다)
+    function sendFeedback() {
+      var body = document.getElementById('feedback-body').value.trim();
+      var done = document.getElementById('feedback-done');
+      if (!body) { done.textContent = '내용을 입력해 주세요'; return; }
+      var subject = 'CHZZK Clip Scout 피드백 (v' + info.version + ')';
+      window.location.href = 'mailto:' + info.email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+      done.textContent = '메일 앱을 열었습니다';
+    }
+
+    function logLabel(f) {
+      var d = new Date(f.modifiedAt);
+      var when = (d.getMonth() + 1) + '월 ' + d.getDate() + '일 ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      return esc(when + ' · 채팅 ' + f.chats.toLocaleString('ko-KR') + '개 · ' + f.name);
+    }
+
+    function deleteLog() {
+      var sel = document.getElementById('log-select');
+      if (!sel.value) return;
+      if (!confirm('이 로그를 지울까요?\\n' + sel.options[sel.selectedIndex].text + '\\n\\nCSV, JSONL, 기록 문서가 함께 삭제되며 되돌릴 수 없습니다.')) return;
+      fetch('/api/logs/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: sel.value }) })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { alert(result.error); return; }
+          analyzedPath = '';
+          document.getElementById('analyze-result').innerHTML = '';
+          document.getElementById('interval-area').hidden = true;
+          document.getElementById('report-area').hidden = true;
+          loadLogList();
+        });
     }
 
     function fmtBytes(n) {
@@ -735,7 +853,7 @@ function renderHome() {
       fetch('/api/logs').then(function (r) { return r.json(); }).then(function (logs) {
         var sel = document.getElementById('log-select');
         sel.innerHTML = logs.length
-          ? logs.map(function (f) { return '<option value="' + esc(f.path) + '">' + esc(f.name) + ' · ' + fmtBytes(f.size) + '</option>'; }).join('')
+          ? logs.map(function (f) { return '<option value="' + esc(f.path) + '">' + logLabel(f) + '</option>'; }).join('')
           : '<option value="">저장된 로그가 없습니다</option>';
       });
     }
@@ -797,9 +915,12 @@ function renderHome() {
       if (!s.lastReceivedAt) return { dot: 'pulse', title: '수집 중 — 채팅 대기', sub: '방송이 시작되면 채팅이 저장됩니다.' };
       var quiet = Math.floor((Date.now() - new Date(s.lastReceivedAt).getTime()) / 1000);
       var tail = saved + ' · 마지막 수신 ' + timeAgo(s.lastReceivedAt);
-      return quiet < 120
-        ? { dot: 'pulse', title: '방송 채팅 수신 중', sub: tail }
-        : { dot: 'pulse', title: '수집 중 — 채팅 없음', sub: tail };
+      if (quiet < 120) return { dot: 'pulse', title: '방송 채팅 수신 중', sub: tail };
+      return {
+        dot: 'pulse',
+        title: '수집 중 — ' + Math.floor(quiet / 60) + '분째 채팅 없음',
+        sub: quiet >= 900 ? saved + ' · 방송이 끝났다면 수집 종료를 눌러주세요' : tail
+      };
     }
 
     function timeAgo(iso) {

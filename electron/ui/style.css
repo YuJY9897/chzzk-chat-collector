@@ -237,3 +237,29 @@ li.hl-open:hover .hl-time { color: #57e6c3; }
 .iv-bar > span { display: block; height: 100%; background: #2c3733; }
 .iv-row.hot .iv-bar > span { background: #00d9a5; opacity: .8; }
 .iv-num { width: 62px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* 정보 탭 */
+.version { margin-left: auto; align-self: center; color: #566159; font-size: 12px; }
+.info-nav { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.chip {
+  background: #161c1a; color: #7d8c85; border: 1px solid #232b28;
+  padding: 6px 13px; font-size: 12.5px; border-radius: 999px;
+}
+.chip:hover { color: #cfe0d8; }
+.chip.active { background: rgba(0,217,165,.12); color: #57e6c3; border-color: rgba(0,217,165,.3); }
+.doc h3 { font-size: 13.5px; color: #cfe0d8; margin: 18px 0 6px; }
+.doc h3:first-child { margin-top: 0; }
+.doc ul { list-style: none; padding: 0; margin: 0; max-height: none; }
+.doc li { display: list-item; padding: 3px 0; border: 0; color: #a9b8b1; font-size: 13px; line-height: 1.6; }
+.doc li::before { content: '· '; color: #566159; }
+.pn-ver { display: flex; align-items: baseline; gap: 9px; margin: 18px 0 6px; }
+.pn-ver:first-child { margin-top: 0; }
+.pn-num { font-size: 14px; font-weight: 700; color: #57e6c3; }
+.pn-date { font-size: 11.5px; color: #6f7f77; }
+.pn-tag { font-size: 11px; font-weight: 700; color: #6f7f77; margin: 8px 0 2px; }
+textarea {
+  width: 100%; padding: 11px 14px; border: 1px solid #2c3733; border-radius: 9px;
+  background: #0e1311; color: #eef4f1; font-size: 13.5px; font-family: inherit;
+  resize: vertical; line-height: 1.5;
+}
+textarea:focus { outline: none; border-color: #00d9a5; }

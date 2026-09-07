@@ -3,6 +3,7 @@ let modalShownFor = '';
 let settingsReady = false;
 let analyzedPath = '';
 let analyzed = null;
+let info = null;
 
 const $ = (id) => document.getElementById(id);
 
@@ -76,7 +77,14 @@ function heroState(s) {
   if (quietSec < 120) {
     return { dot: 'pulse', title: '방송 채팅 수신 중', sub: `${saved} · 마지막 수신 ${timeAgo(s.lastReceivedAt)}` };
   }
-  return { dot: 'pulse', title: '수집 중 — 채팅 없음', sub: `${saved} · 마지막 수신 ${timeAgo(s.lastReceivedAt)}` };
+  const quietMin = Math.floor(quietSec / 60);
+  return {
+    dot: 'pulse',
+    title: `수집 중 — ${quietMin}분째 채팅 없음`,
+    sub: quietSec >= 900
+      ? `${saved} · 방송이 끝났다면 수집 종료를 눌러주세요`
+      : `${saved} · 마지막 수신 ${timeAgo(s.lastReceivedAt)}`
+  };
 }
 
 function renderHighlights(list) {
@@ -238,22 +246,64 @@ function applyBarWidths() {
   }
 }
 
+// 파일명만으로는 어떤 방송인지 알기 어려워 날짜와 채팅 수를 앞에 붙인다
+function logLabel(f) {
+  const d = new Date(f.modifiedAt);
+  const when = `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return esc(`${when} · 채팅 ${f.chats.toLocaleString('ko-KR')}개 · ${f.name}`);
+}
+
 async function loadLogList() {
   const logs = await window.api.listLogs();
   const select = $('log-select');
   select.innerHTML = logs.length
-    ? logs.map((f) => `<option value="${esc(f.path)}">${esc(f.name)} · ${fmtBytes(f.size)}</option>`).join('')
+    ? logs.map((f) => `<option value="${esc(f.path)}">${logLabel(f)}</option>`).join('')
     : '<option value="">저장된 로그가 없습니다</option>';
   $('analyze-btn').disabled = !logs.length;
 }
 
+function renderDoc(sections) {
+  return `<div class="doc">${sections
+    .map((sec) => `<h3>${esc(sec.title)}</h3><ul>${sec.steps.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>`)
+    .join('')}</div>`;
+}
+
+function renderPatchNotes(list) {
+  return `<div class="doc">${list
+    .map((v) => `
+      <div class="pn-ver"><span class="pn-num">v${esc(v.version)}</span><span class="pn-date">${esc(v.date)}</span></div>
+      ${v.added.length ? `<div class="pn-tag">추가</div><ul>${v.added.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+      ${v.fixed.length ? `<div class="pn-tag">수정</div><ul>${v.fixed.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}`)
+    .join('')}</div>`;
+}
+
+async function loadInfo() {
+  if (info) return;
+  info = await window.api.appInfo();
+  $('app-version').textContent = `v${info.version}`;
+  $('info-manual').innerHTML = `<h2 class="no-margin">사용 설명서</h2>${renderDoc(info.manual)}`;
+  $('info-patch').innerHTML = `<h2 class="no-margin">패치노트</h2>${renderPatchNotes(info.patchNotes)}`;
+  $('info-notice').innerHTML = `<h2 class="no-margin">고지사항</h2><div class="doc"><ul>${info.notices.map((t) => `<li>${esc(t)}</li>`).join('')}</ul></div>
+    <p class="muted mt12">만든 사람: ${esc(info.author)} · 버전 v${esc(info.version)}</p>`;
+  $('feedback-to').textContent = `받는 사람: ${info.email} · 만든 사람 ${info.author}`;
+}
+
+function showInfoSection(name) {
+  for (const key of ['manual', 'patch', 'notice', 'feedback']) {
+    $(`info-${key}`).classList.toggle('hidden', key !== name);
+  }
+  for (const chip of document.querySelectorAll('.chip[data-info]')) {
+    chip.classList.toggle('active', chip.dataset.info === name);
+  }
+}
+
 function showTab(name) {
-  const analyzing = name === 'analyze';
-  $('tab-collect').hidden = analyzing;
-  $('tab-analyze').hidden = !analyzing;
-  $('tab-collect-btn').classList.toggle('active', !analyzing);
-  $('tab-analyze-btn').classList.toggle('active', analyzing);
-  if (analyzing) loadLogList();
+  for (const key of ['collect', 'analyze', 'info']) {
+    $(`tab-${key}`).hidden = key !== name;
+    $(`tab-${key}-btn`).classList.toggle('active', key === name);
+  }
+  if (name === 'analyze') loadLogList();
+  if (name === 'info') loadInfo();
 }
 
 function render(next) {
@@ -426,8 +476,37 @@ $('analyze-result').addEventListener('click', async (event) => {
   if (item) toggleHighlightChats(item);
 });
 $('log-refresh-btn').addEventListener('click', loadLogList);
+$('log-delete-btn').addEventListener('click', async () => {
+  const select = $('log-select');
+  if (!select.value) return;
+  const label = select.options[select.selectedIndex].text;
+  if (!confirm(`이 로그를 지울까요?\n${label}\n\nCSV, JSONL, 기록 문서가 함께 삭제되며 되돌릴 수 없습니다.`)) return;
+  const result = await window.api.deleteLog(select.value);
+  if (!result.ok) {
+    alert(result.error);
+    return;
+  }
+  analyzedPath = '';
+  $('analyze-result').innerHTML = '';
+  $('interval-area').hidden = true;
+  $('report-area').hidden = true;
+  loadLogList();
+});
 $('tab-collect-btn').addEventListener('click', () => showTab('collect'));
 $('tab-analyze-btn').addEventListener('click', () => showTab('analyze'));
+$('tab-info-btn').addEventListener('click', () => showTab('info'));
+for (const chip of document.querySelectorAll('.chip[data-info]')) {
+  chip.addEventListener('click', () => showInfoSection(chip.dataset.info));
+}
+$('feedback-btn').addEventListener('click', async () => {
+  const body = $('feedback-body').value.trim();
+  if (!body) {
+    $('feedback-done').textContent = '내용을 입력해 주세요';
+    return;
+  }
+  await window.api.sendFeedback(body);
+  $('feedback-done').textContent = '메일 앱을 열었습니다';
+});
 
 $('reveal-btn').addEventListener('click', () => window.api.revealFiles());
 $('modal-reveal').addEventListener('click', () => window.api.revealFiles());
@@ -435,6 +514,7 @@ $('modal-close').addEventListener('click', () => $('end-modal').classList.add('h
 
 window.api.onState(render);
 refresh();
+loadInfo(); // 버전은 정보 탭을 열기 전에도 보여야 한다
 
 // "N초 전" 표기를 주기적으로 갱신
 setInterval(() => {

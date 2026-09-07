@@ -17,8 +17,9 @@ const { ChatCollector } = await import('../src/chat-collector.js');
 const { createAuthUrl, exchangeCode } = await import('../src/oauth.js');
 const { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } = await import('../src/token-store.js');
 const { isAuthError } = await import('../src/http.js');
-const { analyzeFile, analyzeLogFile, chatsInRange, intervalStats, listLogFiles } = await import('../src/highlight.js');
+const { analyzeFile, analyzeLogFile, chatsInRange, deleteLog, intervalStats, listLogFiles } = await import('../src/highlight.js');
 const { saveReport } = await import('../src/report.js');
+const { AUTHOR, FEEDBACK_EMAIL, MANUAL, NOTICES, PATCH_NOTES } = await import('../src/app-info.js');
 
 const SETTINGS_PATH = path.join(baseDir, 'settings.json');
 const REASON_TEXT = {
@@ -267,6 +268,22 @@ function startAuthCallbackServer(port, expectedState) {
 
 ipcMain.handle('state:get', () => getState());
 
+ipcMain.handle('app:info', () => ({
+  version: app.getVersion(),
+  author: AUTHOR,
+  email: FEEDBACK_EMAIL,
+  manual: MANUAL,
+  notices: NOTICES,
+  patchNotes: PATCH_NOTES
+}));
+
+// 피드백은 기본 메일 앱을 열어 보낸다 (앱이 메일을 직접 전송하지 않는다)
+ipcMain.handle('app:feedback', (_event, body) => {
+  const subject = `CHZZK Clip Scout 피드백 (v${app.getVersion()})`;
+  shell.openExternal(`mailto:${FEEDBACK_EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(String(body ?? ''))}`);
+  return { ok: true };
+});
+
 ipcMain.handle('auth:start', async () => {
   try {
     const port = Number(process.env.PORT || 3000);
@@ -387,6 +404,8 @@ ipcMain.handle('logs:report', (_event, csvPath, intervalSec, threshold) => {
   if (result.ok) shell.showItemInFolder(result.path);
   return result;
 });
+
+ipcMain.handle('logs:delete', (_event, csvPath) => deleteLog(csvPath));
 
 ipcMain.handle('logs:intervals', (_event, csvPath, intervalSec) => intervalStats(csvPath, intervalSec));
 
