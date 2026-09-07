@@ -405,7 +405,14 @@ $('analyze-btn').addEventListener('click', async () => {
   $('analyze-result').innerHTML = renderAnalysis(analyzed);
   applyBarWidths();
   $('interval-area').hidden = !analyzed.ok;
+  $('report-area').hidden = !analyzed.ok;
   if (analyzed.ok) loadIntervals();
+});
+$('report-btn').addEventListener('click', async () => {
+  const done = $('report-done');
+  done.textContent = '저장 중...';
+  const result = await window.api.saveReport(analyzedPath, Number($('interval-select').value), Number($('threshold-select').value));
+  done.textContent = result.ok ? '저장했습니다 — 탐색기에서 확인하세요' : result.error;
 });
 $('interval-select').addEventListener('change', loadIntervals);
 $('analyze-result').addEventListener('click', async (event) => {

@@ -9,6 +9,7 @@ import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './
 import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
 import { analyzeFile, analyzeLogFile, chatsInRange, intervalStats, listLogFiles } from './highlight.js';
+import { saveReport } from './report.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
@@ -49,6 +50,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyzeLog(req, res);
     if (req.method === 'POST' && url.pathname === '/api/chats') return rangeChats(req, res);
     if (req.method === 'POST' && url.pathname === '/api/intervals') return intervals(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/report') return report(req, res);
 
     sendText(res, 'Not found', 404);
   } catch (error) {
@@ -200,6 +202,13 @@ async function intervals(req, res) {
   const target = safeLogPath(body?.path);
   if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 볼 수 있습니다.' });
   sendJson(res, intervalStats(target, Number(body?.intervalSec) || 300));
+}
+
+async function report(req, res) {
+  const body = await readJson(req);
+  const target = safeLogPath(body?.path);
+  if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 만들 수 있습니다.' });
+  sendJson(res, saveReport(target, { intervalSec: Number(body?.intervalSec) || 300, threshold: Number(body?.threshold) || undefined }));
 }
 
 async function readJson(req) {
@@ -567,6 +576,14 @@ function renderHome() {
           </div>
           <div id="interval-result"></div>
         </div>
+
+        <div id="report-area" hidden>
+          <div class="row" style="margin-top:16px;">
+            <button class="primary" type="button" onclick="saveReport()">방송 기록 저장</button>
+            <span class="muted" id="report-done"></span>
+          </div>
+          <p class="muted" style="margin-top:8px;">편집자에게 넘길 수 있는 기록 문서로 저장합니다. 편집점 후보를 시간순으로 정리하고, 구간별 채팅량과 발화자 요약을 함께 담습니다.</p>
+        </div>
       </section>
     </div>
 
@@ -640,6 +657,15 @@ function renderHome() {
         var el = document.getElementById('copy-done');
         if (el) { el.textContent = '복사했습니다'; setTimeout(function () { el.textContent = ''; }, 2000); }
       });
+    }
+
+    function saveReport() {
+      if (!analyzedPath) return;
+      var done = document.getElementById('report-done');
+      done.textContent = '저장 중...';
+      fetch('/api/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: analyzedPath, intervalSec: Number(document.getElementById('interval-select').value), threshold: Number(document.getElementById('threshold-select').value) }) })
+        .then(function (r) { return r.json(); })
+        .then(function (result) { done.textContent = result.ok ? '저장했습니다: ' + result.path : result.error; });
     }
 
     function loadIntervals() {
@@ -758,6 +784,7 @@ function renderHome() {
           }
           box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl + sp + copyBtn;
           document.getElementById('interval-area').hidden = false;
+          document.getElementById('report-area').hidden = false;
           loadIntervals();
         });
     }

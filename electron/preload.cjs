@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld('api', {
   analyzeLog: (csvPath, threshold) => ipcRenderer.invoke('logs:analyze', csvPath, threshold),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   rangeChats: (csvPath, startSec, endSec) => ipcRenderer.invoke('logs:chats', csvPath, startSec, endSec),
-  intervals: (csvPath, intervalSec) => ipcRenderer.invoke('logs:intervals', csvPath, intervalSec)
+  intervals: (csvPath, intervalSec) => ipcRenderer.invoke('logs:intervals', csvPath, intervalSec),
+  saveReport: (csvPath, intervalSec, threshold) => ipcRenderer.invoke('logs:report', csvPath, intervalSec, threshold)
 });
