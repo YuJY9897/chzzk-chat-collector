@@ -8,7 +8,7 @@ import { createAuthUrl, exchangeCode } from './oauth.js';
 import { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } from './token-store.js';
 import { isAuthError } from './http.js';
 import { ChatCollector } from './chat-collector.js';
-import { analyzeFile, analyzeLogFile, chatsInRange, listLogFiles } from './highlight.js';
+import { analyzeFile, analyzeLogFile, chatsInRange, intervalStats, listLogFiles } from './highlight.js';
 
 const port = Number(optionalEnv('PORT', '3000'));
 const redirectUri = optionalEnv('CHZZK_REDIRECT_URI', `http://localhost:${port}/callback`);
@@ -48,6 +48,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/logs') return sendJson(res, listLogFiles(defaultOutputDir));
     if (req.method === 'POST' && url.pathname === '/api/analyze') return analyzeLog(req, res);
     if (req.method === 'POST' && url.pathname === '/api/chats') return rangeChats(req, res);
+    if (req.method === 'POST' && url.pathname === '/api/intervals') return intervals(req, res);
 
     sendText(res, 'Not found', 404);
   } catch (error) {
@@ -192,6 +193,13 @@ async function rangeChats(req, res) {
   const target = safeLogPath(body?.path);
   if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 볼 수 있습니다.' });
   sendJson(res, chatsInRange(target, Number(body?.startSec) || 0, Number(body?.endSec) || 0));
+}
+
+async function intervals(req, res) {
+  const body = await readJson(req);
+  const target = safeLogPath(body?.path);
+  if (!target) return sendJson(res, { ok: false, error: '저장 폴더 안의 파일만 볼 수 있습니다.' });
+  sendJson(res, intervalStats(target, Number(body?.intervalSec) || 300));
 }
 
 async function readJson(req) {
@@ -465,6 +473,15 @@ function renderHome() {
     .hl-kind { display: inline-block; margin: 0 7px; padding: 1px 8px; border-radius: 999px; background: rgba(0,217,165,.12); color: #57e6c3; font-size: 11.5px; font-weight: 600; }
     .hl-keywords { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
     .hl-keywords span { padding: 2px 8px; border-radius: 6px; background: #1a211e; color: #a9b8b1; font-size: 11.5px; }
+    .iv-list { margin-top: 8px; }
+    .iv-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 12.5px; }
+    .iv-row.iv-head { color: #6f7f77; font-size: 11.5px; border-bottom: 1px solid #232b28; padding-bottom: 6px; margin-bottom: 4px; }
+    .iv-row.hot .iv-time { color: #57e6c3; font-weight: 600; }
+    .iv-time { width: 128px; flex-shrink: 0; color: #cfe0d8; }
+    .iv-bar { flex: 1; min-width: 40px; height: 6px; background: #1a211e; border-radius: 3px; overflow: hidden; }
+    .iv-bar > span { display: block; height: 100%; background: #2c3733; }
+    .iv-row.hot .iv-bar > span { background: #00d9a5; opacity: .8; }
+    .iv-num { width: 62px; flex-shrink: 0; text-align: right; }
     .sp-list { margin-top: 8px; }
     .sp-row { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 13px; }
     .sp-rank { width: 18px; color: #6f7f77; font-size: 11.5px; flex-shrink: 0; text-align: right; }
@@ -537,6 +554,19 @@ function renderHome() {
           <button class="primary" type="button" onclick="analyzeLog()">분석</button>
         </div>
         <div id="analyze-result"></div>
+
+        <div id="interval-area" hidden>
+          <h3 class="hl-title">구간별 채팅량 <span class="muted">— 어느 시간대가 활발했는지 보고 그 구간을 직접 확인하세요</span></h3>
+          <div class="row" style="margin-top:8px;">
+            <select id="interval-select" onchange="loadIntervals()" style="padding:10px 12px;border:1px solid #2c3733;border-radius:9px;background:#0e1311;color:#eef4f1;font-size:13px;font-family:inherit;">
+              <option value="60">1분 간격</option>
+              <option value="300" selected>5분 간격</option>
+              <option value="600">10분 간격</option>
+              <option value="1800">30분 간격</option>
+            </select>
+          </div>
+          <div id="interval-result"></div>
+        </div>
       </section>
     </div>
 
@@ -610,6 +640,30 @@ function renderHome() {
         var el = document.getElementById('copy-done');
         if (el) { el.textContent = '복사했습니다'; setTimeout(function () { el.textContent = ''; }, 2000); }
       });
+    }
+
+    function loadIntervals() {
+      if (!analyzedPath) return;
+      var box = document.getElementById('interval-result');
+      box.innerHTML = '<p class="muted" style="margin-top:12px;">불러오는 중...</p>';
+      fetch('/api/intervals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: analyzedPath, intervalSec: Number(document.getElementById('interval-select').value) }) })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+          if (!result.ok) { box.innerHTML = '<p class="muted" style="margin-top:12px;">' + esc(result.error) + '</p>'; return; }
+          var rows = result.rows.map(function (b) {
+            return '<div class="iv-row' + (b.hot ? ' hot' : '') + '">'
+              + '<span class="iv-time">' + fmtDur(b.startSec) + ' ~ ' + fmtDur(b.endSec) + '</span>'
+              + '<span class="iv-bar"><span style="width:' + Math.max(1, b.barPct) + '%"></span></span>'
+              + '<span class="iv-num">' + b.chats.toLocaleString('ko-KR') + '개</span>'
+              + '<span class="iv-num muted">분당 ' + b.perMin + '</span>'
+              + '<span class="iv-num muted">x' + b.ratio + '</span>'
+              + '<span class="iv-num muted">' + b.chatters + '명</span></div>';
+          }).join('');
+          box.innerHTML = '<p class="muted" style="margin-top:8px;">평상시 분당 ' + result.baselinePerMin + '개 · 채팅이 특히 많았던 구간을 표시했습니다</p>'
+            + '<div class="iv-list"><div class="iv-row iv-head"><span class="iv-time">구간</span><span class="iv-bar"></span>'
+            + '<span class="iv-num">채팅</span><span class="iv-num">분당</span><span class="iv-num">배수</span><span class="iv-num">참여자</span></div>'
+            + rows + '</div>';
+        });
     }
 
     function toggleHighlightChats(item) {
@@ -703,6 +757,8 @@ function renderHome() {
                 }).join('') + '</div>';
           }
           box.innerHTML = '<div class="stat-row">' + stats + '</div><svg class="spark" viewBox="0 0 100 100" preserveAspectRatio="none">' + bars + '</svg>' + hl + sp + copyBtn;
+          document.getElementById('interval-area').hidden = false;
+          loadIntervals();
         });
     }
 

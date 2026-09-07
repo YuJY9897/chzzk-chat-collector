@@ -82,6 +82,19 @@
           <button class="primary" id="analyze-btn" type="button">분석</button>
         </div>
         <div id="analyze-result"></div>
+
+        <div id="interval-area" hidden>
+          <h3 class="hl-title">구간별 채팅량 <span class="muted">— 어느 시간대가 활발했는지 보고 그 구간을 직접 확인하세요</span></h3>
+          <div class="row mt8">
+            <select id="interval-select">
+              <option value="60">1분 간격</option>
+              <option value="300" selected>5분 간격</option>
+              <option value="600">10분 간격</option>
+              <option value="1800">30분 간격</option>
+            </select>
+          </div>
+          <div id="interval-result"></div>
+        </div>
       </section>
     </div>
   </main>

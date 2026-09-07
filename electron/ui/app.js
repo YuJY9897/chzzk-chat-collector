@@ -182,6 +182,39 @@ function renderSpeakers(stats) {
     <div class="sp-list">${rows}</div>`;
 }
 
+// 구간별 채팅량 표. 평상시보다 눈에 띄게 많은 구간은 색으로 표시한다.
+function renderIntervals(result) {
+  if (!result || !result.ok) return `<p class="muted mt12">${esc(result?.error || '')}</p>`;
+  const rows = result.rows
+    .map((b) => `
+      <div class="iv-row${b.hot ? ' hot' : ''}">
+        <span class="iv-time">${fmtDuration(b.startSec)} ~ ${fmtDuration(b.endSec)}</span>
+        <span class="iv-bar"><span data-share="${Math.max(1, b.barPct)}"></span></span>
+        <span class="iv-num">${b.chats.toLocaleString('ko-KR')}개</span>
+        <span class="iv-num muted">분당 ${b.perMin}</span>
+        <span class="iv-num muted">x${b.ratio}</span>
+        <span class="iv-num muted">${b.chatters}명</span>
+      </div>`)
+    .join('');
+  return `
+    <p class="muted mt8">평상시 분당 ${result.baselinePerMin}개 · 채팅이 특히 많았던 구간을 표시했습니다</p>
+    <div class="iv-list">
+      <div class="iv-row iv-head">
+        <span class="iv-time">구간</span><span class="iv-bar"></span>
+        <span class="iv-num">채팅</span><span class="iv-num">분당</span><span class="iv-num">배수</span><span class="iv-num">참여자</span>
+      </div>
+      ${rows}
+    </div>`;
+}
+
+async function loadIntervals() {
+  if (!analyzedPath) return;
+  const box = $('interval-result');
+  box.innerHTML = '<p class="muted mt12">불러오는 중...</p>';
+  box.innerHTML = renderIntervals(await window.api.intervals(analyzedPath, Number($('interval-select').value)));
+  applyBarWidths();
+}
+
 function renderAnalysis(result) {
   if (!result) return '';
   if (!result.ok) return `<p class="muted mt12">${esc(result.error)}</p>`;
@@ -200,7 +233,7 @@ function renderAnalysis(result) {
 
 // CSP가 style 속성을 막아서 막대 폭은 DOM에 넣은 뒤 CSSOM으로 지정한다
 function applyBarWidths() {
-  for (const bar of document.querySelectorAll('.sp-bar > span[data-share]')) {
+  for (const bar of document.querySelectorAll('[data-share]')) {
     bar.style.width = `${bar.dataset.share}%`;
   }
 }
@@ -371,7 +404,10 @@ $('analyze-btn').addEventListener('click', async () => {
   analyzed = await window.api.analyzeLog(target, Number($('threshold-select').value));
   $('analyze-result').innerHTML = renderAnalysis(analyzed);
   applyBarWidths();
+  $('interval-area').hidden = !analyzed.ok;
+  if (analyzed.ok) loadIntervals();
 });
+$('interval-select').addEventListener('change', loadIntervals);
 $('analyze-result').addEventListener('click', async (event) => {
   if (event.target.id === 'copy-ts-btn') {
     await window.api.copyText(timestampText(analyzed.highlights));

@@ -242,6 +242,63 @@ export function analyzeLogFile(csvPath, options = {}) {
   }
 }
 
+// 방송을 일정 간격으로 잘라 구간별 채팅량을 낸다.
+// 하이라이트가 "여기가 터졌다"를 초 단위로 찍는다면, 이건 방송 전체를 빠짐없이 덮어
+// "몇 분대가 활발했나"를 사람이 직접 보고 판단하게 해준다.
+export function intervalStats(csvPath, intervalSec = 300) {
+  try {
+    if (!csvPath || !fs.existsSync(csvPath)) return { ok: false, error: '파일을 찾을 수 없습니다.' };
+    const rows = loadRowsFromCsv(csvPath);
+    if (!rows.length) return { ok: false, error: '채팅이 없는 파일입니다.' };
+
+    const step = Math.max(30, Math.floor(intervalSec));
+    const endSec = Math.max(...rows.map((r) => r.sec));
+    const buckets = Array.from({ length: Math.floor(endSec / step) + 1 }, (_, i) => ({
+      startSec: i * step,
+      endSec: Math.min((i + 1) * step, endSec + 1),
+      chats: 0,
+      reactions: 0,
+      chatters: new Set()
+    }));
+
+    for (const row of rows) {
+      const b = buckets[Math.floor(row.sec / step)];
+      b.chats += 1;
+      if (REACTION.test(row.content)) b.reactions += 1;
+      b.chatters.add(row.sender);
+    }
+
+    const perMinList = buckets.map((b) => b.chats / (step / 60));
+    const base = median(perMinList) || 1;
+    const peak = Math.max(...buckets.map((b) => b.chats), 1);
+
+    // 간격이 길수록 평균이 희석돼 고정 배수(예: 1.5배)로는 아무것도 안 걸린다.
+    // 그래서 "상위 20% 안에 들면서 평상시보다 많은 구간"을 눈에 띄게 표시한다.
+    const sorted = [...perMinList].sort((a, b) => b - a);
+    const cut = sorted[Math.max(0, Math.ceil(sorted.length * 0.2) - 1)] ?? Infinity;
+
+    return {
+      ok: true,
+      intervalSec: step,
+      baselinePerMin: Number(base.toFixed(1)),
+      rows: buckets.map((b) => ({
+        startSec: b.startSec,
+        endSec: b.endSec,
+        chats: b.chats,
+        perMin: Number((b.chats / (step / 60)).toFixed(1)),
+        chatters: b.chatters.size,
+        reactionRate: b.chats ? Number((b.reactions / b.chats).toFixed(2)) : 0,
+        // 평상시 대비 몇 배인지, 그리고 그래프용 상대 높이
+        ratio: Number((b.chats / (step / 60) / base).toFixed(1)),
+        hot: b.chats / (step / 60) >= cut && b.chats / (step / 60) > base * 1.1,
+        barPct: Math.round((b.chats / peak) * 100)
+      }))
+    };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
+}
+
 // 특정 구간의 채팅 원문. 하이라이트가 진짜 클립각인지 눈으로 확인할 때 쓴다.
 export function chatsInRange(csvPath, startSec, endSec, limit = 200) {
   try {

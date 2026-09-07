@@ -17,7 +17,7 @@ const { ChatCollector } = await import('../src/chat-collector.js');
 const { createAuthUrl, exchangeCode } = await import('../src/oauth.js');
 const { clearTokens, connectedAt, hasTokens, readTokens, writeTokens } = await import('../src/token-store.js');
 const { isAuthError } = await import('../src/http.js');
-const { analyzeFile, analyzeLogFile, chatsInRange, listLogFiles } = await import('../src/highlight.js');
+const { analyzeFile, analyzeLogFile, chatsInRange, intervalStats, listLogFiles } = await import('../src/highlight.js');
 
 const SETTINGS_PATH = path.join(baseDir, 'settings.json');
 const REASON_TEXT = {
@@ -380,6 +380,8 @@ ipcMain.handle('logs:list', (_event, dir) => listLogFiles(dir || path.resolve('.
 ipcMain.handle('logs:analyze', (_event, csvPath, threshold) => analyzeLogFile(csvPath, threshold ? { threshold } : {}));
 
 ipcMain.handle('clipboard:write', (_event, text) => { clipboard.writeText(String(text ?? '')); return { ok: true }; });
+
+ipcMain.handle('logs:intervals', (_event, csvPath, intervalSec) => intervalStats(csvPath, intervalSec));
 
 ipcMain.handle('logs:chats', (_event, csvPath, startSec, endSec) => chatsInRange(csvPath, startSec, endSec));
 

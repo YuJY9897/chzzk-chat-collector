@@ -226,3 +226,14 @@ li.hl-open:hover .hl-time { color: #57e6c3; }
 }
 .hl-keywords { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
 .hl-keywords span { padding: 2px 8px; border-radius: 6px; background: #1a211e; color: #a9b8b1; font-size: 11.5px; }
+
+/* 구간별 채팅량 */
+.iv-list { margin-top: 8px; }
+.iv-row { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 12.5px; }
+.iv-row.iv-head { color: #6f7f77; font-size: 11.5px; border-bottom: 1px solid #232b28; padding-bottom: 6px; margin-bottom: 4px; }
+.iv-row.hot .iv-time { color: #57e6c3; font-weight: 600; }
+.iv-time { width: 128px; flex-shrink: 0; color: #cfe0d8; font-variant-numeric: tabular-nums; }
+.iv-bar { flex: 1; min-width: 40px; height: 6px; background: #1a211e; border-radius: 3px; overflow: hidden; }
+.iv-bar > span { display: block; height: 100%; background: #2c3733; }
+.iv-row.hot .iv-bar > span { background: #00d9a5; opacity: .8; }
+.iv-num { width: 62px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
